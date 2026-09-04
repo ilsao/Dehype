@@ -6,7 +6,7 @@ the product features described in `AGENTS.md` are not all implemented yet.
 
 ## Development
 
-Node.js 22.12+ and npm are required.
+Node.js 22.13+ (and lower than Node.js 23) and npm are required.
 
 ```sh
 npm ci
