@@ -10,7 +10,7 @@ Dehype is advisory. It must help users make their own decisions without blocking
 
 ## Current Repository State
 
-The repository currently contains an early Chrome Manifest V3 skeleton under `extension/`. Empty entry points and missing build configuration are not implemented features. Treat the architecture below as the intended direction and introduce infrastructure incrementally as features require it.
+The repository currently contains an early Chrome Manifest V3 skeleton under `extension/` and the shared Sprint 1 product contract in `extension/src/shared/productInfo.ts`. Empty entry points and missing build configuration are not implemented features. Treat the architecture below as the intended direction and introduce infrastructure incrementally as features require it.
 
 Do not describe future-phase functionality as available until it is implemented and tested.
 
@@ -60,20 +60,6 @@ Use `MutationObserver` only where dynamic page changes require it. Scope observe
 
 All Temu selectors, DOM traversal, localized-label interpretation, and variant extraction belong in a Temu adapter. Shared code consumes normalized domain objects and must not query Temu DOM selectors directly.
 
-An adapter should expose behavior equivalent to:
-
-```ts
-interface CommerceSiteAdapter {
-  isSupportedPage(): boolean;
-  extractCurrentProduct(): Promise<ProductSnapshot>;
-  extractCandidates(): Promise<ProductCandidate[]>;
-  detectPersuasionElements(): Promise<PersuasionElement[]>;
-  observeProductChanges(onChange: () => void): () => void;
-}
-```
-
-Selectors must be resilient to absent fields and minor DOM changes. Prefer stable semantic attributes and structured data over generated class names. Do not use broad text deletion as a neutralization strategy.
-
 ### Background Service Worker
 
 The Manifest V3 service worker coordinates sessions, message routing, lifecycle events, and storage access that should not live in the page. It must remain restart-safe: never rely on in-memory state being preserved between events.
@@ -120,133 +106,6 @@ Never silently add an item to the cart, change a variant, apply a coupon, start 
 Use `chrome.storage.local` by default. Version all persisted records and validate them when reading. Treat malformed or incompatible stored data as recoverable: preserve what can be validated, otherwise reset only the affected record and explain the recovery to the user when it affects visible state.
 
 Do not introduce IndexedDB until storage size or query requirements demonstrate that `chrome.storage.local` is insufficient.
-
-## Core Domain Contracts
-
-Use strict TypeScript. These contracts define the semantic minimum; implementations may add fields only when a concrete feature needs them. Currency values must use integer minor units plus an ISO 4217 currency code where the currency is known.
-
-```ts
-type Id = string;
-type IsoDateTime = string;
-
-interface Money {
-  amountMinor: number;
-  currency: string;
-}
-
-interface PurchaseIntent {
-  id: Id;
-  createdAt: IsoDateTime;
-  updatedAt: IsoDateTime;
-  budget?: Money;
-  useCase: string;
-  requiredConditions: string[];
-  excludedConditions: string[];
-}
-
-interface ProductSnapshot {
-  id: Id;
-  source: "temu";
-  url: string;
-  title: string;
-  brand?: string;
-  imageUrl?: string;
-  selectedVariant?: string;
-  price?: Money;
-  specifications: Record<string, string>;
-  shipping?: {
-    cost?: Money;
-    deliveryEstimate?: string;
-  };
-  seller?: {
-    name?: string;
-    rating?: number;
-  };
-  reviews?: {
-    rating?: number;
-    count?: number;
-    summary?: string;
-  };
-  capturedAt: IsoDateTime;
-}
-
-interface ProductCandidate {
-  product: ProductSnapshot;
-  relation: "variant" | "same-site-alternative";
-  comparability: "comparable" | "partial" | "unknown";
-  reasons: string[];
-}
-
-type PersuasionType =
-  | "urgency"
-  | "scarcity"
-  | "social-proof"
-  | "upselling"
-  | "gamification"
-  | "visual-emphasis"
-  | "other";
-
-interface PersuasionElement {
-  id: Id;
-  type: PersuasionType;
-  observedText?: string;
-  confidence: number;
-  detectedAt: IsoDateTime;
-  evidence: string[];
-}
-
-type RequirementStatus = "match" | "mismatch" | "unknown";
-
-interface DecisionDeltaReason {
-  category:
-    | "budget-variance"
-    | "requirement-mismatch"
-    | "new-want"
-    | "purpose-drift";
-  impact: number;
-  summary: string;
-  evidence: string[];
-}
-
-interface DecisionDelta {
-  score: number;
-  budgetVariance?: Money;
-  requirements: Array<{
-    condition: string;
-    status: RequirementStatus;
-    explanation: string;
-  }>;
-  reasons: DecisionDeltaReason[];
-  calculatedAt: IsoDateTime;
-}
-
-interface NeutralPageModel {
-  product: ProductSnapshot;
-  intent: PurchaseIntent;
-  decisionDelta: DecisionDelta;
-  candidates: ProductCandidate[];
-  detectedInfluences: Array<{
-    element: PersuasionElement;
-    estimatedInfluence: number;
-    explanation: string;
-  }>;
-}
-
-interface ShoppingSession {
-  id: Id;
-  schemaVersion: number;
-  status: "active" | "completed" | "abandoned";
-  intent: PurchaseIntent;
-  currentProduct?: ProductSnapshot;
-  candidates: ProductCandidate[];
-  persuasionElements: PersuasionElement[];
-  decisionDelta?: DecisionDelta;
-  startedAt: IsoDateTime;
-  updatedAt: IsoDateTime;
-}
-```
-
-Scores must use a documented, bounded scale consistently across the UI. Confidence and estimated-influence values must be clamped to that scale. Do not interpret `unknown` as `match` or assign it zero risk without an explicit, documented policy.
 
 ## Decision Delta Rules
 
@@ -305,7 +164,7 @@ Logging must exclude sensitive page content and user-entered intent by default. 
 - Validate messages at every trust boundary, including content-script messages.
 - Keep one owner for each state transition; avoid duplicating session state across the page, side panel, and worker.
 - Persist state before acknowledging operations whose loss would surprise the user.
-- Handle service-worker restart, tab navigation, unsupported pages, and stale product snapshots explicitly.
+- Handle service-worker restart, tab navigation, unsupported pages, and stale product information explicitly.
 - Include schema versions in persisted state and externally generated structured data.
 
 ## Coding Conventions
@@ -315,8 +174,10 @@ Logging must exclude sensitive page content and user-entered intent by default. 
 - Keep DOM access inside site adapters and rendering modules.
 - Keep Chrome API calls behind narrow wrappers that can be replaced in tests.
 - Use exhaustive checks for discriminated unions.
-- Normalize price and locale data before comparison; never compare formatted price strings.
+- Treat `Elem.value` as untrusted raw text at trust boundaries.
+- Normalize price and locale data from `originalPrice.value` and `currentPrice.value` before comparison; never compare formatted price strings.
 - Represent missing information explicitly instead of fabricating defaults.
+- Write code comments and JSDoc in English.
 - Use accessible semantic HTML, visible focus states, sufficient contrast, and keyboard-operable controls.
 - Respect reduced-motion preferences and do not recreate urgency through the extension's own visuals.
 - Avoid hidden network calls, telemetry, analytics, and new runtime dependencies unless the feature explicitly requires them.
@@ -329,6 +190,7 @@ Logging must exclude sensitive page content and user-entered intent by default. 
 Cover at minimum:
 
 - Purchase-intent validation and persisted-schema validation
+- `ProductInfo` required-name behavior, optional-field handling, and `Elem` string constraints
 - Localized price parsing and minor-unit normalization
 - Required and excluded condition matching
 - Decision Delta components, bounds, explanations, and unknown states
@@ -340,7 +202,7 @@ Cover at minimum:
 
 Use sanitized, minimal DOM fixtures. Test:
 
-- Missing prices, specifications, shipping, seller, or reviews
+- Missing optional `ProductInfo` fields, including prices, discount, image, description, and stock amount
 - Selected variants and price changes
 - Localized currencies and number formats
 - Dynamically inserted persuasion elements
