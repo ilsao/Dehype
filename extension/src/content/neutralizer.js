@@ -1,16 +1,23 @@
+// extension/src/content/neutralizer.js
+
 class DOMReplacer {
     constructor() {
-        // 備份修改前的 DOM，確保 100% 可還原
         this.history = new Map();
     }
 
     /**
-     * 核心替換方法
-     * @param {Object} productInfo - 完整的商品資訊物件，內含 targets 陣列
+     * 核心替換方法 (支援 ProductInfo 內包含 multiple Elem { id, value } 物件)
+     * @param {Object} productInfo - 包含 name, originPrice, currentPrice 等 Elem 結構的物件
      */
     replace(productInfo = {}) {
-        // 從 productInfo 中直接取出 targets 陣列
-        const targets = productInfo.targets || [];
+        // 解析 ProductInfo 物件內所有符合 Elem { id, value } 結構的欄位
+        const targets = [];
+
+        Object.values(productInfo).forEach((item) => {
+            if (item && typeof item === 'object' && item.id && item.value !== undefined) {
+                targets.push({ id: item.id, content: item.value });
+            }
+        });
 
         targets.forEach(({ id, content }) => {
             const element = this.findElement(id);
@@ -20,21 +27,16 @@ class DOMReplacer {
                 return;
             }
 
-            // 首次修改前備份原始狀態
+            // 備份原始文字
             if (!this.history.has(id)) {
                 this.history.set(id, {
                     element,
-                    originalText: element.textContent,
-                    originalStyle: element.getAttribute('style') || ''
+                    originalText: element.textContent
                 });
             }
 
-            // 執行文字替換與視覺標記
+            // 純文字覆寫
             element.textContent = content;
-            element.style.backgroundColor = '#fee2e2';
-            element.style.color = '#991b1b';
-            element.style.padding = '2px 6px';
-            element.style.borderRadius = '4px';
             element.setAttribute('data-dehype-status', 'replaced');
         });
     }
@@ -53,10 +55,9 @@ class DOMReplacer {
      * 還原網頁原始文字
      */
     restore() {
-        this.history.forEach(({ element, originalText, originalStyle }) => {
+        this.history.forEach(({ element, originalText }) => {
             if (element && document.body.contains(element)) {
                 element.textContent = originalText;
-                element.setAttribute('style', originalStyle);
                 element.removeAttribute('data-dehype-status');
             }
         });
@@ -64,5 +65,4 @@ class DOMReplacer {
     }
 }
 
-// 掛載至 window 全域
 window.dehypeReplacer = new DOMReplacer();
