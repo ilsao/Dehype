@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dehype</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div id="popup-container">
+    <!-- 第一行：圖示與標題、關閉按鈕 -->
+    <div id="header">
+      <div id="logo-title-area">
+        <img src="../../img/Dehype.png" alt="Logo" id="header-icon">
+        <span id="extension-name">Dehype</span>
+      </div>
+      <button id="close-btn" aria-label="關閉">&times;</button>
+    </div>
+    
+    <!-- 第二行：切換按鈕列 -->
+    <div id="button-row">
+      <button id="neutralize-btn" class="action-btn active">Neutralize</button>
+      <button id="restore-btn" class="action-btn">Restore</button>
+    </div>
+    
+    <!-- 第三行：灰底狀態列 -->
+    <div id="status-row">
+      <span id="status-indicator" class="status-green"></span>
+      <span id="status-text">Show extension current status</span>
+    </div>
+  </div>
+  <script type="module" src="popup.js"></script>
+</body>
+</html>
