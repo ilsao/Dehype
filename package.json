@@ -1,0 +1,24 @@
+{
+  "name": "dehype",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22.13.0 <23"
+  },
+  "scripts": {
+    "lint": "eslint .",
+    "test": "vitest run",
+    "build": "tsc --noEmit && vite build && npm run validate:build",
+    "validate:build": "node scripts/validate-build.mjs"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@types/node": "^22.20.0",
+    "eslint": "^10.10.0",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.69.0",
+    "vite": "^8.2.2",
+    "vitest": "^5.0.0"
+  }
+}
