@@ -35,10 +35,9 @@ export default defineConfig({
     emptyOutDir: true,
     rollupOptions: {
       input: {
-        popup: resolve(extensionRoot, "src/popup/index.html"),
-        popupHello: resolve(extensionRoot, "src/popup/hello.html"),
+        popup: resolve(extensionRoot, "src/popup/popup.html"),
         sidepanel: resolve(extensionRoot, "src/sidepanel/index.html"),
-        background: resolve(extensionRoot, "src/background/serviceWorker.ts"),
+        background: resolve(extensionRoot, "src/background/background.js"),
         content: resolve(extensionRoot, "src/content/index.ts"),
       },
       preserveEntrySignatures: "strict",
