@@ -174,7 +174,7 @@ Logging must exclude sensitive page content and user-entered intent by default. 
 - Keep DOM access inside site adapters and rendering modules.
 - Keep Chrome API calls behind narrow wrappers that can be replaced in tests.
 - Use exhaustive checks for discriminated unions.
-- Treat `Elem.value` as untrusted raw text at trust boundaries.
+- Treat `ProductElement.value` as untrusted raw text at trust boundaries.
 - Normalize price and locale data from `originalPrice.value` and `currentPrice.value` before comparison; never compare formatted price strings.
 - Represent missing information explicitly instead of fabricating defaults.
 - Write code comments and JSDoc in English.
@@ -190,7 +190,7 @@ Logging must exclude sensitive page content and user-entered intent by default. 
 Cover at minimum:
 
 - Purchase-intent validation and persisted-schema validation
-- `ProductInfo` required-name behavior, optional-field handling, and `Elem` string constraints
+- `ProductInfo` required-name behavior, optional-field handling, and `ProductElement` string constraints
 - Localized price parsing and minor-unit normalization
 - Required and excluded condition matching
 - Decision Delta components, bounds, explanations, and unknown states

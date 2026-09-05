@@ -1,7 +1,10 @@
-import type { Elem, ProductInfo } from "../shared/productInfo";
-import type { ProductAdapter } from "./productAdapter";
+import type { ProductElement, ProductInfo } from "../shared/productInfo";
+import {
+  DEHYPE_ELEMENT_ID,
+  type ProductAdapter,
+} from "./productAdapter";
 
-type IdFactory = () => string;
+type IdFactory = (element?: Element) => string;
 
 type FieldName =
   | "name"
@@ -15,7 +18,17 @@ const FIELD_SELECTORS: Record<FieldName, string[]> = {
   discount: [DISCOUNT_SELECTOR],
 };
 
-const defaultIdFactory: IdFactory = () => crypto.randomUUID();
+const defaultIdFactory: IdFactory = (element) => {
+  const existingId = element?.getAttribute(DEHYPE_ELEMENT_ID);
+
+  if (existingId) {
+    return existingId;
+  }
+
+  const id = crypto.randomUUID();
+  element?.setAttribute(DEHYPE_ELEMENT_ID, id);
+  return id;
+};
 
 function findElement(document: Document, fieldName: FieldName): Element | undefined {
   for (const selector of FIELD_SELECTORS[fieldName]) {
@@ -35,18 +48,21 @@ function readElementValue(element: Element): string {
 function toElem(
   element: Element | undefined,
   idFactory: IdFactory,
-): Elem | undefined {
+): ProductElement | undefined {
   if (!element) {
     return undefined;
   }
 
   return {
-    id: idFactory(),
+    id: idFactory(element),
     value: readElementValue(element),
   };
 }
 
-function toNameFallback(document: Document, idFactory: IdFactory): Elem | undefined {
+function toNameFallback(
+  document: Document,
+  idFactory: IdFactory,
+): ProductElement | undefined {
   const metadataName = document.querySelector('meta[property="og:title"]')?.getAttribute(
     "content",
   );
@@ -57,7 +73,7 @@ function toNameFallback(document: Document, idFactory: IdFactory): Elem | undefi
   return value ? { id: idFactory(), value } : undefined;
 }
 
-function parsePriceValue(price: Elem): number | undefined {
+function parsePriceValue(price: ProductElement): number | undefined {
   const numericPart = price.value.match(/\d+(?:,\d{3})*(?:\.\d+)?/);
   if (!numericPart) {
     return undefined;
@@ -88,22 +104,22 @@ export class TemuProductAdapter implements ProductAdapter {
     }
   }
 
-  public getName(document: Document): Elem | undefined {
+  public getName(document: Document): ProductElement | undefined {
     return (
       toElem(findElement(document, "name"), this.idFactory) ||
       toNameFallback(document, this.idFactory)
     );
   }
 
-  private getPriceElements(document: Document): Elem[] {
+  private getPriceElements(document: Document): ProductElement[] {
     return Array.from(document.querySelectorAll("._14At0Pe5"))
       .filter((element) => /\$\s*\d/.test(readElementValue(element)))
       .slice(0, 2)
       .map((element) => toElem(element, this.idFactory))
-      .filter((element): element is Elem => element !== undefined);
+      .filter((element): element is ProductElement => element !== undefined);
   }
 
-  public getDiscount(document: Document): Elem | undefined {
+  public getDiscount(document: Document): ProductElement | undefined {
     const discountElement = Array.from(
       document.querySelectorAll(DISCOUNT_SELECTOR),
     ).find((element) => /\b\d+(?:\.\d+)?%\s*OFF\b/i.test(element.textContent));
@@ -122,8 +138,8 @@ export class TemuProductAdapter implements ProductAdapter {
     }
 
     const priceElements = this.getPriceElements(document);
-    let originalPriceElement: Elem | undefined;
-    let currentPriceElement: Elem | undefined;
+    let originalPriceElement: ProductElement | undefined;
+    let currentPriceElement: ProductElement | undefined;
 
     if (priceElements.length === 1) {
       currentPriceElement = priceElements[0];

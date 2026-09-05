@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { DEHYPE_ELEMENT_ID } from "../extension/src/adapters/productAdapter";
 import { TemuProductAdapter } from "../extension/src/adapters/temuProductAdapter";
 
 const productUrl =
@@ -144,5 +145,19 @@ describe("TemuProductAdapter", () => {
     adapter.extractProductInfo(document, productUrl);
 
     expect(document.documentElement.outerHTML).toBe(before);
+  });
+
+  it("marks extracted elements so neutralized values can be written back", () => {
+    const document = new DOMParser().parseFromString(
+      '<div class="_25g_jM0z">Ceramic mug</div>',
+      "text/html",
+    );
+    const adapter = new TemuProductAdapter();
+
+    const productInfo = adapter.extractProductInfo(document, productUrl);
+
+    expect(
+      document.querySelector("._25g_jM0z")?.getAttribute(DEHYPE_ELEMENT_ID),
+    ).toBe(productInfo.name.id);
   });
 });
