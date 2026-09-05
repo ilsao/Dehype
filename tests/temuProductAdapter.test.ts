@@ -434,8 +434,8 @@ describe("TemuProductAdapter", () => {
         <div id="rightContent">
           <button id="primary-cart">Add to cart</button>
           <div role="button" id="promotional-cart">
-            <span>-63% now! Add to cart!</span>
-            <span>Arrives in 3 business days</span>
+            <span id="promotional-label">-63% now! Add to cart!</span>
+            <span id="arrival-label">Arrives in 3 business days</span>
           </div>
         </div>
       `,
@@ -455,6 +455,8 @@ describe("TemuProductAdapter", () => {
       action: "deemphasize",
       presentation: "neutral-action",
     });
+    expect(target("promotional-label")).toBeUndefined();
+    expect(target("arrival-label")).toBeUndefined();
   });
 
   it("preserves a promotional cart control when it is the only purchase control", () => {

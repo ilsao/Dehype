@@ -499,6 +499,7 @@ describe("commerce stability with the real Temu adapter", () => {
   });
 
   it("keeps adapter-selected promotional controls suppressed across rescans", () => {
+    vi.spyOn(window.navigator, "userAgent", "get").mockReturnValue("Chrome");
     document.body.innerHTML = `
       <main>
         <h1 ${DEHYPE_ELEMENT_ID}="name-id">Mug</h1>
@@ -508,6 +509,28 @@ describe("commerce stability with the real Temu adapter", () => {
         </div>
       </main>
     `;
+    const promotionalCart = document.querySelector<HTMLElement>(
+      "#promotional-cart",
+    )!;
+    const primaryCart = document.querySelector<HTMLElement>("#primary-cart")!;
+    markAsVisible(primaryCart);
+    Object.defineProperty(promotionalCart, "getBoundingClientRect", {
+      value: () => ({
+        x: 0,
+        y: 0,
+        width: promotionalCart.hasAttribute("data-dehype-suppressed") ? 0 : 180,
+        height: promotionalCart.hasAttribute("data-dehype-suppressed") ? 0 : 44,
+        top: 0,
+        right: 180,
+        bottom: 44,
+        left: 0,
+        toJSON: () => ({}),
+      }),
+    });
+    Object.defineProperty(promotionalCart, "getClientRects", {
+      value: () =>
+        promotionalCart.hasAttribute("data-dehype-suppressed") ? [] : [{}],
+    });
     const adapter = new TemuProductAdapter();
     const handle = applyInlineRebuild(
       document,
@@ -519,9 +542,6 @@ describe("commerce stability with the real Temu adapter", () => {
         onRestore: vi.fn(),
       },
     );
-    const promotionalCart = document.querySelector<HTMLElement>(
-      "#promotional-cart",
-    )!;
 
     expect(promotionalCart.getAttribute("data-dehype-suppressed")).toBe(
       "hidden-container",
@@ -534,6 +554,46 @@ describe("commerce stability with the real Temu adapter", () => {
 
     handle.restore();
     expect(promotionalCart.hasAttribute("data-dehype-suppressed")).toBe(false);
+  });
+
+  it("preserves descendants while transitioning a cart control from rewrite to suppression", () => {
+    document.body.innerHTML = `
+      <h1 ${DEHYPE_ELEMENT_ID}="name-id">Mug</h1>
+      <div id="promo" role="button">-35% now! Add to cart!<span id="arrival">Arrives in 3 business days</span></div>
+    `;
+    const promo = document.querySelector<HTMLElement>("#promo")!;
+    const arrival = document.querySelector<HTMLElement>("#arrival")!;
+    let action: "rewrite-text" | "suppress" = "rewrite-text";
+    const handle = applyInlineRebuild(
+      document,
+      { name: { id: "name-id", value: "Neutral mug" } },
+      {
+        source: "structural",
+        findNeutralizationTargets: () => [{
+          element: promo,
+          action,
+          reason: "promotion",
+          presentation: action === "suppress" ? "hidden-container" : "neutral-action",
+          ...(action === "rewrite-text" ? { replacementText: "Add to cart" } : {}),
+        }],
+        onRestore: vi.fn(),
+      },
+    );
+
+    expect(arrival.isConnected).toBe(true);
+    expect(promo.textContent).toBe("Add to cartArrives in 3 business days");
+
+    action = "suppress";
+    handle.neutralizeNewElements();
+    expect(promo.getAttribute("data-dehype-suppressed")).toBe("hidden-container");
+    expect(promo.textContent).toBe(
+      "-35% now! Add to cart!Arrives in 3 business days",
+    );
+    expect(arrival.isConnected).toBe(true);
+
+    handle.restore();
+    expect(promo.hasAttribute("data-dehype-suppressed")).toBe(false);
+    expect(arrival.isConnected).toBe(true);
   });
 
   it("keeps the visible promotional cart button clickable when a plain cart button is hidden", () => {

@@ -413,7 +413,11 @@ export class TemuProductAdapter implements ProductAdapter {
       );
     }
     for (const rule of TEXT_SUPPRESSION_RULES) {
-      const textTargets = elementsWithOwnText(document, rule.pattern);
+      const textTargets = elementsWithOwnText(document, rule.pattern).filter(
+        (element) =>
+          rule.reason !== "promotion" ||
+          element.closest('button, [role="button"]') === null,
+      );
       addTargets(
         targets,
         rule.reason === "countdown" || rule.reason === "promotion"
@@ -501,15 +505,16 @@ export class TemuProductAdapter implements ProductAdapter {
     }
     for (const control of retainedControls) {
       const replacementText = neutralCartText(textValue(control));
-      const targetElement = replacementText
+      const rewriteElement = replacementText
         ? promotionalCartTextElement(control)
-        : control;
+        : undefined;
+      const targetElement = rewriteElement ?? control;
       targets.set(targetElement, {
         element: targetElement,
-        action: replacementText ? "rewrite-text" : "deemphasize",
+        action: rewriteElement ? "rewrite-text" : "deemphasize",
         reason: "promotion",
         presentation: "neutral-action",
-        ...(replacementText ? { replacementText } : {}),
+        ...(rewriteElement && replacementText ? { replacementText } : {}),
       });
     }
 
@@ -552,6 +557,18 @@ function findPromotionalContainer(
   element: HTMLElement,
 ): HTMLElement {
   if (element.closest("#goods_price")) return element;
+
+  const managedContainer = element.closest<HTMLElement>(
+    "[data-dehype-suppressed]",
+  );
+  if (
+    managedContainer &&
+    managedContainer.id !== "mainHeader" &&
+    managedContainer.id !== "rightContent" &&
+    !managedContainer.hasAttribute(DEHYPE_ELEMENT_ID)
+  ) {
+    return managedContainer;
+  }
 
   const viewWidth = document.defaultView?.innerWidth ?? 0;
   const candidates: HTMLElement[] = [];
@@ -658,11 +675,13 @@ function neutralCartText(value: string): string | undefined {
   return undefined;
 }
 
-function promotionalCartTextElement(control: HTMLElement): HTMLElement {
-  const matchingDescendant = Array.from(
+function promotionalCartTextElement(
+  control: HTMLElement,
+): HTMLElement | undefined {
+  return Array.from(
     control.querySelectorAll<HTMLElement>("span, div, p, strong, em"),
-  ).find((element) => PROMOTIONAL_CART_TEXT.test(ownText(element)));
-  return matchingDescendant ?? control;
+  ).find((element) => PROMOTIONAL_CART_TEXT.test(ownText(element))) ??
+    (PROMOTIONAL_CART_TEXT.test(ownText(control)) ? control : undefined);
 }
 
 function ownText(element: HTMLElement): string {
@@ -826,6 +845,12 @@ function isVisiblyRendered(element: HTMLElement): boolean {
       return false;
     }
   }
+
+  // At this point no native hidden state or inline style hides the control.
+  // Dehype's stylesheet intentionally makes its own suppressed target have no
+  // layout boxes, so geometry cannot be used to decide whether it remains a
+  // usable commerce fallback on subsequent scans.
+  if (dehypeSuppressed) return true;
 
   if (!view) return true;
 
