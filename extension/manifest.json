@@ -14,7 +14,7 @@
     "default_popup": "src/popup/popup.html"
   },
   "side_panel": {
-    "default_path": "src/sidepanel/index.html"
+    "default_path": "src/sidepanel/decisionReplay.html"
   },
   "background": {
     "service_worker": "src/background/background.js",
