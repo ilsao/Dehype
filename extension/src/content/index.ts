@@ -172,11 +172,11 @@ export async function rebuildCurrentProduct(): Promise<ContentResponse> {
 }
 
 export function restoreCurrentProduct(): RestoreCurrentProductResponse {
+  stopNavigationMonitor?.();
+  stopNavigationMonitor = undefined;
   activeRebuild?.restore();
   activeRebuild = undefined;
   activeResponse = undefined;
-  stopNavigationMonitor?.();
-  stopNavigationMonitor = undefined;
   return { type: "DEHYPE_RESTORE_CURRENT_PRODUCT_RESULT" };
 }
 
@@ -220,7 +220,9 @@ async function requestNeutralizedValues(
 
 function startNavigationMonitor(pageUrl: string): void {
   stopNavigationMonitor?.();
+  let frameId: number | undefined;
   const checkUrl = (): void => {
+    frameId = undefined;
     if (
       window.location.href !== pageUrl ||
       !activeRebuild?.targetsAreConnected()
@@ -230,18 +232,24 @@ function startNavigationMonitor(pageUrl: string): void {
     }
     activeRebuild.neutralizeNewElements();
   };
-  const observer = new MutationObserver(checkUrl);
+  const scheduleCheck = (): void => {
+    if (frameId !== undefined) return;
+    frameId = window.requestAnimationFrame(checkUrl);
+  };
+  const observer = new MutationObserver(scheduleCheck);
   observer.observe(document.documentElement, {
     childList: true,
     subtree: true,
     characterData: true,
   });
-  window.addEventListener("popstate", checkUrl);
-  window.addEventListener("hashchange", checkUrl);
+  window.addEventListener("popstate", scheduleCheck);
+  window.addEventListener("hashchange", scheduleCheck);
   stopNavigationMonitor = () => {
     observer.disconnect();
-    window.removeEventListener("popstate", checkUrl);
-    window.removeEventListener("hashchange", checkUrl);
+    if (frameId !== undefined) window.cancelAnimationFrame(frameId);
+    frameId = undefined;
+    window.removeEventListener("popstate", scheduleCheck);
+    window.removeEventListener("hashchange", scheduleCheck);
   };
 }
 

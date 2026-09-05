@@ -110,14 +110,9 @@ const DEEMPHASIS_RULES = [
 const PRIMARY_ACTION_TEXT =
   /^(?:add to cart|加入購物車|加入购物车|add to bag)$/i;
 const CART_DESTINATION_TEXT = /^(?:go to cart|前往購物車|前往购物车)$/i;
-const LIGHTNING_DEAL_TEXT = /^(?:lightning deal|閃電特價|闪电特价)$/i;
 const PROMOTIONAL_CART_TEXT =
   /(?:^|\s)-?\d+(?:[.,]\d+)?%\s+now!?.*\badd to cart!?/i;
 const STANDALONE_PROMOTION_HEADING = /^\s*big sale\s*$/i;
-const DECREASE_QUANTITY_TEXT =
-  /^(?:decrease quantity|減少數量|减少数量|[-−–—])$/i;
-const INCREASE_QUANTITY_TEXT =
-  /^(?:increase quantity|增加數量|增加数量|\+)$/i;
 const DELIVERY_TEXT =
   /^(?:free shipping for this item|arrives? in .+|ships? earliest .+|此商品免運|此商品免运|預計.+送達|预计.+送达)/i;
 
@@ -400,6 +395,10 @@ export class TemuProductAdapter implements ProductAdapter {
 
   public findNeutralizationTargets(document: Document): NeutralizationTarget[] {
     const targets = new Map<HTMLElement, NeutralizationTarget>();
+    const protectedCartDestinations = interactiveElementsWithText(
+      document,
+      CART_DESTINATION_TEXT,
+    );
 
     for (const rule of SUPPRESSION_RULES) {
       addTargets(
@@ -459,10 +458,10 @@ export class TemuProductAdapter implements ProductAdapter {
     );
     addTargets(
       targets,
-      findRedundantLightningDealCards(document),
-      "suppress",
+      findUpperPromotionalCartCards(document),
+      "remove",
       "promotion",
-      "hidden-container",
+      "removed-container",
     );
     addTargets(
       targets,
@@ -471,20 +470,39 @@ export class TemuProductAdapter implements ProductAdapter {
       "promotion",
       "hidden-container",
     );
-    addTargets(
-      targets,
-      findRedundantCartSummaryCards(document),
-      "suppress",
-      "promotion",
-      "hidden-container",
+    // Choose a surviving commerce control before filtering destructive targets.
+    const commerceControls = Array.from(
+      document.querySelectorAll<HTMLElement>('button, [role="button"]'),
+    ).filter((control) =>
+      PRIMARY_ACTION_TEXT.test(textValue(control)) ||
+      PROMOTIONAL_CART_TEXT.test(textValue(control)),
     );
+    const removalTargets = [...targets.values()].filter(({ action }) => action !== "deemphasize");
+    const usableControls = commerceControls.filter(isUsableControl);
+    const retainedControls = usableControls.filter((control) =>
+      !removalTargets.some(({ element }) => element.contains(control)) &&
+      PRIMARY_ACTION_TEXT.test(textValue(control)),
+    );
+    if (retainedControls.length === 0) {
+      const fallback = usableControls.find((control) =>
+        !removalTargets.some(({ element, action }) => action === "remove" && element.contains(control)),
+      ) ?? usableControls[0] ?? commerceControls[0];
+      if (fallback) retainedControls.push(fallback);
+    }
+    for (const control of retainedControls) {
+      targets.set(control, {
+        element: control, action: "deemphasize", reason: "promotion",
+        presentation: "neutral-action",
+      });
+    }
 
     return [...targets.values()].filter(
       ({ element, action }) =>
+        !intersectsAny(element, protectedCartDestinations) &&
         (action === "deemphasize" ||
           (!element.hasAttribute(DEHYPE_ELEMENT_ID) &&
-            !element.querySelector(`[${DEHYPE_ELEMENT_ID}]`))) &&
-        (action !== "suppress" || !isProtectedCommerceControl(element)),
+            !element.querySelector(`[${DEHYPE_ELEMENT_ID}]`) &&
+            !intersectsAny(element, retainedControls))),
     );
   }
 
@@ -597,36 +615,6 @@ function interactiveElementsWithText(
   ).filter((element) => pattern.test(textValue(element)));
 }
 
-function findRedundantLightningDealCards(document: Document): HTMLElement[] {
-  const productPanel = document.querySelector<HTMLElement>("#rightContent");
-  if (!productPanel) return [];
-
-  const cartControls = interactiveElementsWithText(
-    productPanel.ownerDocument,
-    CART_DESTINATION_TEXT,
-  ).filter(
-    (element) => productPanel.contains(element) && isUsableControl(element),
-  );
-  const cards = new Set<HTMLElement>();
-
-  for (const label of elementsWithOwnText(document, LIGHTNING_DEAL_TEXT)) {
-    if (!productPanel.contains(label)) continue;
-    const card = closestAncestorContainingControl(
-      label,
-      productPanel,
-      CART_DESTINATION_TEXT,
-    );
-    if (!card) continue;
-
-    const hasAlternativeControl = cartControls.some(
-      (control) => !card.contains(control),
-    );
-    if (hasAlternativeControl) cards.add(card);
-  }
-
-  return [...cards];
-}
-
 function findRedundantPromotionalCartControls(
   document: Document,
 ): HTMLElement[] {
@@ -640,6 +628,9 @@ function findRedundantPromotionalCartControls(
       isUsableControl(element) &&
       (PRIMARY_ACTION_TEXT.test(textValue(element)) ||
         CART_DESTINATION_TEXT.test(textValue(element))),
+  );
+  const upperPromotionalCards = new Set(
+    findUpperPromotionalCartCards(document),
   );
 
   return Array.from(
@@ -657,165 +648,60 @@ function findRedundantPromotionalCartControls(
         control !== element &&
         !element.contains(control) &&
         !control.contains(element),
-    );
+    ) && ![...upperPromotionalCards].some((card) => card.contains(element));
   });
 }
 
-function findRedundantCartSummaryCards(document: Document): HTMLElement[] {
+function findUpperPromotionalCartCards(document: Document): HTMLElement[] {
   const productPanel = document.querySelector<HTMLElement>("#rightContent");
   if (!productPanel) return [];
 
-  const cartControls = topLevelMatchingControls(
-    productPanel,
-    CART_DESTINATION_TEXT,
-  );
-  const primaryRows = cartControls
-    .map((control) => closestQuantityActionRow(control, productPanel))
-    .filter((row): row is HTMLElement => row !== undefined);
-  if (primaryRows.length === 0) return [];
-
-  const primaryControls = cartControls.filter((control) =>
-    primaryRows.some((row) => row.contains(control)),
-  );
-  const redundantCards = new Set<HTMLElement>();
-
-  for (const control of cartControls) {
-    if (primaryControls.some((primary) => primary === control)) continue;
-
-    const card = largestSummaryAncestorExcluding(
-      control,
-      productPanel,
-      primaryControls,
-    );
-    if (card && isCartSummary(card)) redundantCards.add(card);
-  }
-
-  return [...redundantCards];
-}
-
-function topLevelMatchingControls(
-  boundary: HTMLElement,
-  pattern: RegExp,
-): HTMLElement[] {
-  const controls = Array.from(
-    boundary.querySelectorAll<HTMLElement>('button, [role="button"]'),
+  const primaryControls = Array.from(
+    productPanel.querySelectorAll<HTMLElement>('button, [role="button"]'),
   ).filter(
-    (element) => isUsableControl(element) && pattern.test(textValue(element)),
+    (element) =>
+      isUsableControl(element) && PRIMARY_ACTION_TEXT.test(textValue(element)),
   );
-  return controls.filter(
-    (element) => !controls.some((other) => other !== element && other.contains(element)),
-  );
-}
+  if (primaryControls.length === 0) return [];
 
-function closestQuantityActionRow(
-  control: HTMLElement,
-  boundary: HTMLElement,
-): HTMLElement | undefined {
-  let current: HTMLElement | null = control;
-  while (current && current !== boundary) {
-    const controls = Array.from(
-      current.querySelectorAll<HTMLElement>('button, [role="button"]'),
-    );
-    if (
-      controls.some((element) =>
-        quantityControlLabels(element).some((label) =>
-          DECREASE_QUANTITY_TEXT.test(label),
-        ),
-      ) &&
-      controls.some((element) =>
-        quantityControlLabels(element).some((label) =>
-          INCREASE_QUANTITY_TEXT.test(label),
-        ),
-      )
-    ) {
-      return current;
+  const cards = new Set<HTMLElement>();
+  for (const heading of elementsWithOwnText(
+    document,
+    STANDALONE_PROMOTION_HEADING,
+  )) {
+    if (!productPanel.contains(heading)) continue;
+    let current: HTMLElement | null = heading;
+    let card: HTMLElement | undefined;
+    while (current && current !== productPanel) {
+      if (
+        primaryControls.some((control) => current?.contains(control)) &&
+        textValue(current).length <= 700
+      ) {
+        card = current;
+      }
+      current = current.parentElement;
     }
-    current = current.parentElement;
+    if (card) cards.add(card);
   }
-  return undefined;
+  return [...cards];
 }
 
-function largestSummaryAncestorExcluding(
-  control: HTMLElement,
-  boundary: HTMLElement,
-  protectedControls: readonly HTMLElement[],
-): HTMLElement | undefined {
-  let candidate: HTMLElement = control;
-  let parent = candidate.parentElement;
-  while (
-    parent &&
-    parent !== boundary &&
-    !protectedControls.some((protectedControl) => parent?.contains(protectedControl)) &&
-    !parent.querySelector("h1, h2, #goods_price") &&
-    textValue(parent).length <= 240
-  ) {
-    candidate = parent;
-    parent = parent.parentElement;
-  }
-  return candidate;
-}
 
-function isCartSummary(element: HTMLElement): boolean {
-  const text = textValue(element);
-  return (
-    /\badded\s*:?\s*\d+/i.test(text) &&
-    (/\bqty\b/i.test(text) || element.querySelector("select, input") !== null)
-  );
-}
-
-function quantityControlLabels(element: HTMLElement): string[] {
-  return [
-    element.getAttribute("aria-label"),
-    element.getAttribute("title"),
-    textValue(element),
-  ]
-    .filter((label): label is string => label !== null)
-    .map((label) => label.replace(/\s+/g, " ").trim())
-    .filter(Boolean);
-}
-
-function closestAncestorContainingControl(
+function intersectsAny(
   element: HTMLElement,
-  boundary: HTMLElement,
-  pattern: RegExp,
-): HTMLElement | undefined {
-  let current: HTMLElement | null = element;
-  while (current && current !== boundary) {
-    if (interactiveElementsWithText(current.ownerDocument, pattern).some(
-      (control) => current?.contains(control),
-    )) {
-      return current;
-    }
-    current = current.parentElement;
-  }
-  return undefined;
+  protectedElements: readonly HTMLElement[],
+): boolean {
+  return protectedElements.some(
+    (protectedElement) =>
+      element === protectedElement ||
+      element.contains(protectedElement) ||
+      protectedElement.contains(element),
+  );
 }
 
 function isUsableControl(element: HTMLElement): boolean {
   return (
     (!(element instanceof HTMLButtonElement) || !element.disabled) &&
     element.getAttribute("aria-disabled") !== "true"
-  );
-}
-
-function isProtectedCommerceControl(element: HTMLElement): boolean {
-  if (!element.matches('button, input, select, [role="button"]')) return false;
-
-  const text = textValue(element);
-  if (PRIMARY_ACTION_TEXT.test(text)) return true;
-  if (!PROMOTIONAL_CART_TEXT.test(text)) return false;
-
-  const productPanel = element.closest<HTMLElement>("#rightContent");
-  if (!productPanel) return true;
-  return !Array.from(
-    productPanel.querySelectorAll<HTMLElement>('button, [role="button"]'),
-  ).some(
-    (control) =>
-      control !== element &&
-      !element.contains(control) &&
-      !control.contains(element) &&
-      isUsableControl(control) &&
-      (PRIMARY_ACTION_TEXT.test(textValue(control)) ||
-        CART_DESTINATION_TEXT.test(textValue(control))),
   );
 }

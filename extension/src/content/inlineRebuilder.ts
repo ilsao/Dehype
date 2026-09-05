@@ -29,8 +29,11 @@ interface ReplacementEntry {
 
 interface NeutralizationEntry {
   element: HTMLElement;
-  marker: typeof SUPPRESSED_MARKER | typeof DEEMPHASIZED_MARKER;
-  originalMarker: AttributeSnapshot;
+  action: NeutralizationTarget["action"];
+  marker?: typeof SUPPRESSED_MARKER | typeof DEEMPHASIZED_MARKER;
+  originalMarker?: AttributeSnapshot;
+  parent?: Node;
+  nextSibling?: ChildNode | null;
 }
 
 export interface InlineRebuildHandle {
@@ -125,8 +128,8 @@ export function applyInlineRebuild(
     for (const target of options.findNeutralizationTargets()) {
       const { element } = target;
       if (
-        !element.isConnected ||
-        (target.action === "suppress" &&
+        (!element.isConnected && target.action !== "remove") ||
+        ((target.action === "suppress" || target.action === "remove") &&
           replacements.some(
             ({ source, replacement }) =>
               element === source ||
@@ -142,22 +145,44 @@ export function applyInlineRebuild(
 
     for (const [element, entry] of neutralizations) {
       const nextTarget = nextTargets.get(element);
+      if (entry.action === "remove") {
+        // Detached nodes disappear from adapter scans; retain ownership until restore.
+        if (element.isConnected) element.remove();
+        continue;
+      }
       const nextMarker = nextTarget ? markerFor(nextTarget) : undefined;
       if (!nextTarget || nextMarker !== entry.marker) {
-        restoreAttribute(element, entry.marker, entry.originalMarker);
+        if (entry.marker && entry.originalMarker) {
+          restoreAttribute(element, entry.marker, entry.originalMarker);
+        }
         neutralizations.delete(element);
       }
     }
 
     for (const [element, target] of nextTargets) {
-      const marker = markerFor(target);
       const existing = neutralizations.get(element);
+      if (existing?.action === "remove") continue;
+      if (target.action === "remove") {
+        const parent = element.parentNode;
+        if (!parent) continue;
+        neutralizations.set(element, {
+          element,
+          action: target.action,
+          parent,
+          nextSibling: element.nextSibling,
+        });
+        element.remove();
+        added += 1;
+        continue;
+      }
+      const marker = markerFor(target);
       if (existing) {
         element.setAttribute(marker, target.presentation);
         continue;
       }
       neutralizations.set(element, {
         element,
+        action: target.action,
         marker,
         originalMarker: snapshotAttribute(element, marker),
       });
@@ -197,8 +222,19 @@ export function applyInlineRebuild(
         replacement?.remove();
         restoreAttribute(source, ORIGINAL_MARKER, originalMarker);
       }
-      for (const { element, marker, originalMarker } of neutralizations.values()) {
-        restoreAttribute(element, marker, originalMarker);
+      for (const entry of [...neutralizations.values()].reverse()) {
+        if (entry.action === "remove") {
+          if (entry.parent?.isConnected && !entry.element.isConnected) {
+            entry.parent.insertBefore(
+              entry.element,
+              entry.nextSibling?.parentNode === entry.parent ? entry.nextSibling : null,
+            );
+          }
+          continue;
+        }
+        if (entry.marker && entry.originalMarker) {
+          restoreAttribute(entry.element, entry.marker, entry.originalMarker);
+        }
       }
       if (layoutRoot && layoutRootMarker) {
         restoreAttribute(layoutRoot, LAYOUT_ROOT_MARKER, layoutRootMarker);
@@ -403,11 +439,17 @@ function createPageStyle(
     }
     [${DEEMPHASIZED_MARKER}="neutral-action"] {
       border-color: transparent !important;
-      color: inherit !important;
-      background-color: transparent !important;
+      color: #263238 !important;
+      background-color: #f1f5f9 !important;
       background-image: none !important;
       box-shadow: none !important;
       text-shadow: none !important;
+    }
+    [${DEEMPHASIZED_MARKER}="neutral-action"] :not(img):not(picture):not(video) {
+      color: inherit !important;
+      -webkit-text-fill-color: currentColor !important;
+      background-color: transparent !important;
+      background-image: none !important;
     }
     [${DEEMPHASIZED_MARKER}="neutral-fact"] {
       border-color: transparent !important;

@@ -170,7 +170,7 @@ describe("content-script integration", () => {
     )).toBe(false);
   });
 
-  it("suppresses a dynamically inserted duplicate cart summary and restores it", async () => {
+  it("never modifies dynamically inserted Go to cart controls", async () => {
     document.body.innerHTML = `
       <main>
         <h1 class="_25g_jM0z">Olive oil dispenser</h1>
@@ -197,19 +197,53 @@ describe("content-script integration", () => {
       `,
     );
 
-    await vi.waitFor(() =>
-      expect(document.querySelector("#upper-cart-summary")?.getAttribute(
-        "data-dehype-suppressed",
-      )).toBe("hidden-container"),
-    );
-    expect(document.querySelector("#lower-cart-row")?.hasAttribute(
-      "data-dehype-suppressed",
-    )).toBe(false);
+    document.querySelector("#rightContent")!.append(document.createElement("span"));
+    await new Promise((resolve) => window.setTimeout(resolve));
+    for (const element of document.querySelectorAll(
+      "#upper-cart-summary, #upper-cart-summary *, #lower-cart-row, #lower-cart-row *",
+    )) {
+      expect(element.hasAttribute("data-dehype-suppressed")).toBe(false);
+      expect(element.hasAttribute("data-dehype-deemphasized")).toBe(false);
+    }
 
     restoreCurrentProduct();
-    expect(document.querySelector("#upper-cart-summary")?.hasAttribute(
+    expect(document.querySelector("#upper-cart-summary")).not.toBeNull();
+  });
+
+  it("removes the upper sale card while preserving the lower promotional action", async () => {
+    document.body.innerHTML = `
+      <main>
+        <h1 class="_25g_jM0z">Wire stripper</h1>
+        <div data-testid="current-price">$12.99</div>
+        <div id="rightContent">
+          <section id="upper-sale-card">
+            <span>BIG SALE</span>
+            <button>Add to cart</button>
+          </section>
+          <div id="lower-promotional-action" role="button">
+            <span>-61% now! Add to cart!</span>
+            <span>Free shipping for this item</span>
+          </div>
+        </div>
+      </main>
+    `;
+
+    await rebuildCurrentProduct();
+    expect(document.querySelector("#upper-sale-card")).toBeNull();
+    expect(document.querySelector("#lower-promotional-action")?.getAttribute(
       "data-dehype-suppressed",
-    )).toBe(false);
+    )).toBeNull();
+
+    document.querySelector("#lower-promotional-action span:last-child")!.textContent =
+      "Free shipping for this item - updated";
+    document.querySelector("#rightContent")!.append(document.createElement("span"));
+    await vi.waitFor(() =>
+      expect(document.querySelector("#upper-sale-card")).toBeNull(),
+    );
+
+    restoreCurrentProduct();
+    expect(document.querySelector("#upper-sale-card")).not.toBeNull();
+    expect(document.querySelector("#lower-promotional-action")).not.toBeNull();
   });
 
   it("returns an error when analysis has no visible DOM target", async () => {

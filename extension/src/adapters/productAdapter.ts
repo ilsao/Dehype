@@ -2,7 +2,7 @@ import type { ProductInfo } from "../shared/productInfo";
 
 export const DEHYPE_ELEMENT_ID = "data-dehype-element-id";
 
-export type NeutralizationAction = "suppress" | "deemphasize";
+export type NeutralizationAction = "remove" | "suppress" | "deemphasize";
 export type NeutralizationReason =
   | "countdown"
   | "scarcity"
@@ -12,6 +12,7 @@ export type NeutralizationReason =
   | "upsell"
   | "recommendation";
 export type NeutralizationPresentation =
+  | "removed-container"
   | "hidden-container"
   | "neutral-surface"
   | "neutral-action"

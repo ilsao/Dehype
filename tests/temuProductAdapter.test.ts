@@ -454,10 +454,10 @@ describe("TemuProductAdapter", () => {
     const targets = new TemuProductAdapter().findNeutralizationTargets(document);
     expect(
       targets.find(({ element }) => element.id === "only-cart"),
-    ).toBeUndefined();
+    ).toMatchObject({ action: "deemphasize", presentation: "neutral-action" });
   });
 
-  it("suppresses the recommendation rail, sticky benefit ad, and redundant lightning card", () => {
+  it("suppresses unrelated promotion while preserving every Go to cart control", () => {
     const document = new DOMParser().parseFromString(
       `
         <div id="main_scale">
@@ -494,11 +494,11 @@ describe("TemuProductAdapter", () => {
       action: "suppress",
       reason: "promotion",
     });
-    expect(target("lightning-card")).toMatchObject({
-      action: "suppress",
-      reason: "promotion",
-    });
+    expect(target("lightning-card")).toBeUndefined();
     expect(target("primary-purchase-row")).toBeUndefined();
+    expect(
+      targets.some(({ element }) => /go to cart/i.test(element.textContent ?? "")),
+    ).toBe(false);
     expect(adapter.findNeutralLayoutRoot(document)?.className).toBe("baseContent");
   });
 
@@ -522,7 +522,7 @@ describe("TemuProductAdapter", () => {
     ).toBeUndefined();
   });
 
-  it("suppresses the upper cart summary while preserving the lower quantity action row", () => {
+  it("preserves every Go to cart summary and quantity action row", () => {
     const document = new DOMParser().parseFromString(
       `
         <div id="rightContent">
@@ -546,11 +546,7 @@ describe("TemuProductAdapter", () => {
     const target = (id: string) =>
       targets.find(({ element }) => element.id === id);
 
-    expect(target("upper-cart-summary")).toMatchObject({
-      action: "suppress",
-      reason: "promotion",
-      presentation: "hidden-container",
-    });
+    expect(target("upper-cart-summary")).toBeUndefined();
     expect(target("lower-cart-row")).toBeUndefined();
   });
 
@@ -578,12 +574,44 @@ describe("TemuProductAdapter", () => {
     const target = (id: string) =>
       targets.find(({ element }) => element.id === id);
 
-    expect(target("upper-cart-summary")).toMatchObject({
-      action: "suppress",
-      reason: "promotion",
-      presentation: "hidden-container",
-    });
+    expect(target("upper-cart-summary")).toBeUndefined();
     expect(target("lower-cart-row")).toBeUndefined();
+  });
+
+  it("protects nested, disabled, localized, and out-of-panel Go to cart controls", () => {
+    const document = new DOMParser().parseFromString(
+      `
+        <section data-dehype-persuasion id="outside-promotion">
+          <button id="outside-cart"><span id="outside-label">Go to cart</span></button>
+        </section>
+        <div id="rightContent">
+          <section data-dehype-persuasion id="disabled-promotion">
+            <button id="disabled-cart" disabled><span>前往購物車</span></button>
+          </section>
+          <section data-dehype-persuasion id="aria-disabled-promotion">
+            <div role="button" id="aria-disabled-cart" aria-disabled="true">
+              <span>前往购物车</span>
+            </div>
+          </section>
+        </div>
+      `,
+      "text/html",
+    );
+
+    const targets = new TemuProductAdapter().findNeutralizationTargets(document);
+    const protectedIds = new Set([
+      "outside-promotion",
+      "outside-cart",
+      "outside-label",
+      "disabled-promotion",
+      "disabled-cart",
+      "aria-disabled-promotion",
+      "aria-disabled-cart",
+    ]);
+
+    expect(
+      targets.filter(({ element }) => protectedIds.has(element.id)),
+    ).toEqual([]);
   });
 
   it("preserves an upper cart summary when no lower quantity action row exists", () => {
