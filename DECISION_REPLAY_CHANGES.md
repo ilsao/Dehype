@@ -303,6 +303,46 @@ side panel 透過以下方式更新：
 
 每秒 render 不會每秒寫 storage，也不會每秒呼叫 AI。
 
+## Decision Reflection analysis
+
+Replay raw events 會先透過純函式：
+
+```text
+DecisionSession
+  -> buildDecisionTrace()
+  -> deterministic statistics
+  -> optional Gemini interpretation
+```
+
+`DecisionTrace` 目前計算：
+
+- unique products explored
+- total completed product view duration
+- per-product total duration
+- attention share
+- view count
+- comparison count
+- revisit count
+- final product from reliable `ADD_TO_CART` or product-linked `CHECKOUT`
+- final price
+- budget alignment
+- persuasion signal counts by type and product
+
+不完整的 active view duration 不會被當成已完成 decision time；沒有可靠 product ID 的 checkout 也不會被猜測成 final choice。
+
+Gemini 接收包含 deterministic trace 的壓縮 payload，回傳 structured JSON：
+
+- `summary`
+- `journeyInsights`
+- `attentionInsights`
+- `potentialInfluences`
+- `reflection`
+- `uncertainty`
+
+System prompt 要求 Gemini 只解讀已計算資料，使用 `may have`、`coincided with`、`temporal association` 等不確定語言，不宣稱 persuasion caused a purchase，也不產生 influence score。
+
+Gemini 失敗時，deterministic dashboard 仍可使用，side panel 只顯示 analysis unavailable/error。
+
 ## Persuasion 標記
 
 Replay 可保存既有 adapter 偵測到的 persuasion metadata：
@@ -350,14 +390,21 @@ interface PersuasionRecord {
 - 每個商品的累計 view duration
 - Reset session
 - Optional Gemini analysis
+- Decision Reflection dashboard
+- KPI cards for products, decision time, comparisons, revisits, final choice, and budget alignment
+- Attention Share bars
+- Decision Journey sequence
+- Price Path when prices are available
+- Persuasion Signals Encountered bars
+- structured AI reflection sections
 
 Timeline action label 包括：
 
 ```text
 Viewing
 Viewed
-Clicked
-Added
+Compared
+Selected
 Removed
 Checkout
 ```
@@ -429,6 +476,12 @@ Gemini failure 只會顯示 analysis unavailable/error，Replay collection 仍�
 - [x] side panel 即時 broadcast refresh
 - [x] local replay payload builder
 - [x] optional Gemini analysis
+- [x] deterministic DecisionTrace metrics
+- [x] attention share and comparison/revisit metrics
+- [x] budget alignment and final-choice detection without guessing
+- [x] persuasion signal aggregation
+- [x] structured Gemini Decision Reflection output
+- [x] Decision Reflection dashboard charts and KPI cards
 - [x] existing neutralizer/rebuilder compatibility
 
 ### 尚未完整完成
@@ -451,7 +504,7 @@ Gemini failure 只會顯示 analysis unavailable/error，Replay collection 仍�
 
 目前 repository 驗證結果：
 
-- Full tests：85 passed
+- Full tests：89 passed
 - TypeScript typecheck：passed
 - ESLint：passed
 - Production build：passed
@@ -472,6 +525,9 @@ Gemini failure 只會顯示 analysis unavailable/error，Replay collection 仍�
 - optional snapshot field propagation
 - action context propagation
 - no guessed productId for cart/checkout actions
+- deterministic DecisionTrace metrics
+- structured Gemini analysis parsing and failure handling
+- Decision Reflection payload context
 - existing neutralizer/rebuilder behavior
 
 真實 Temu end-to-end 測試仍受登入/verification、地區與頁面可用性影響，不能將 fixture tests 等同於完整 production DOM 驗證。
