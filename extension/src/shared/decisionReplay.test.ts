@@ -23,6 +23,39 @@ describe("Decision Replay model", () => {
     });
   });
 
+  it("preserves optional product facts and persuasion context", () => {
+    const snapshot = productSnapshotFromInfo(
+      "https://www.temu.com/ca/mug-g-12345.html",
+      {
+        name: { id: "name-id", value: "Mug" },
+        currentPrice: { id: "current-id", value: "$19" },
+        originalPrice: { id: "original-id", value: "$29" },
+        discount: { id: "discount-id", value: "34% OFF" },
+        stockAmount: { id: "stock-id", value: "Only 3 left" },
+        description: { id: "description-id", value: "Ceramic mug" },
+        image: { id: "image-id", value: "https://example.test/mug.png" },
+      },
+      100,
+      [
+        {
+          elemId: "persuasion-id",
+          persuasionType: "countdown",
+          strength: "rule-detected",
+          originalText: "Limited time",
+          neutralized: true,
+        },
+      ],
+    );
+
+    expect(snapshot).toMatchObject({
+      discount: "34% OFF",
+      stockAmount: "Only 3 left",
+      description: "Ceramic mug",
+      image: "https://example.test/mug.png",
+      persuasion: [{ persuasionType: "countdown", neutralized: true }],
+    });
+  });
+
   it("compresses repeated product views and actions without losing sequence", () => {
     const session = createDecisionSession(100);
     const products = [
@@ -56,6 +89,41 @@ describe("Decision Replay model", () => {
     ]);
     expect(payload.products).toHaveLength(3);
     expect(payload.products.find((product) => product.productId === "c")?.totalViewDurationMs).toBe(56000);
+    expect(payload.products.find((product) => product.productId === "c")?.currentPrice).toBe("$49");
+  });
+
+  it("includes optional product context in the analysis payload", () => {
+    const session = createDecisionSession(100);
+    const product = productSnapshotFromInfo(
+      "https://www.temu.com/ca/mug-g-9.html",
+      {
+        name: { id: "name", value: "Mug" },
+        currentPrice: { id: "current", value: "$19" },
+        discount: { id: "discount", value: "34% OFF" },
+        stockAmount: { id: "stock", value: "Only 3 left" },
+      },
+      100,
+    );
+    session.events = [
+      createDecisionEvent("PRODUCT_VIEW", 100, {
+        productId: product.productId,
+        product,
+        durationMs: 2_000,
+      }),
+    ];
+
+    const payload = buildReplayAnalysisPayload(session);
+
+    expect(payload.products).toEqual([
+      expect.objectContaining({
+        productId: "temu:9",
+        name: "Mug",
+        currentPrice: "$19",
+        discount: "34% OFF",
+        stockAmount: "Only 3 left",
+        totalViewDurationMs: 2_000,
+      }),
+    ]);
   });
 
   it("rejects malformed persisted sessions", () => {

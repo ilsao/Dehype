@@ -11,6 +11,7 @@ h2 { margin-bottom: 14px; font-size: 22px; font-weight: 400; letter-spacing: 0; 
 .header-actions { display: flex; align-items: flex-start; gap: 8px; }
 button { border: 1px solid #1d2925; border-radius: 3px; padding: 9px 12px; color: #f2f4ef; background: #1d2925; font: 700 12px ui-monospace, SFMono-Regular, Consolas, monospace; cursor: pointer; }
 button.secondary { color: #1d2925; background: transparent; border-color: #9eaaa0; }
+.configure-button { margin-top: 10px; }
 button:focus-visible, input:focus-visible { outline: 3px solid #d77a45; outline-offset: 2px; }
 section { padding-top: 30px; }
 .intent-panel { display: flex; align-items: end; gap: 12px; padding-bottom: 22px; border-bottom: 1px solid #c7d0c4; }
@@ -31,6 +32,7 @@ input { display: block; width: 100px; margin-top: 5px; border: 1px solid #9eaaa0
 .products { display: grid; gap: 9px; }
 .product-row { display: grid; grid-template-columns: 1fr auto auto; gap: 15px; align-items: center; border-top: 1px solid #d9dfd7; padding: 12px 0; }
 .product-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.product-name small { display: block; overflow: hidden; color: #68746c; font: 10px ui-monospace, SFMono-Regular, Consolas, monospace; text-overflow: ellipsis; white-space: nowrap; }
 .product-price { color: #d05f31; font-weight: 700; }
 .analysis { display: grid; gap: 12px; }
 .analysis-group { border-top: 1px solid #d9dfd7; padding-top: 10px; }

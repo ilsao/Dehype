@@ -27,6 +27,10 @@ export interface ProductReplaySnapshot {
   name: string;
   currentPrice?: string;
   originalPrice?: string;
+  discount?: string;
+  stockAmount?: string;
+  description?: string;
+  image?: string;
   viewedAt: number;
   persuasion?: PersuasionRecord[];
 }
@@ -59,6 +63,10 @@ export interface ReplayAnalysisPayload {
     name: string;
     currentPrice?: string;
     originalPrice?: string;
+    discount?: string;
+    stockAmount?: string;
+    description?: string;
+    image?: string;
     totalViewDurationMs: number;
   }>;
   viewSequence: string[];
@@ -111,6 +119,10 @@ export function productSnapshotFromInfo(
   for (const [field, key] of [
     ["currentPrice", "currentPrice"],
     ["originalPrice", "originalPrice"],
+    ["discount", "discount"],
+    ["stockAmount", "stockAmount"],
+    ["description", "description"],
+    ["image", "image"],
   ] as const) {
     const value = productInfo[field]?.value;
     if (value) snapshot[key] = value;
@@ -137,6 +149,18 @@ export function buildReplayAnalysisPayload(
           : {}),
         totalViewDurationMs: 0,
       };
+      for (const field of [
+        "currentPrice",
+        "originalPrice",
+        "discount",
+        "stockAmount",
+        "description",
+        "image",
+      ] as const) {
+        if (current[field] === undefined && event.product[field] !== undefined) {
+          current[field] = event.product[field];
+        }
+      }
       current.totalViewDurationMs += event.durationMs ?? 0;
       products.set(event.product.productId, current);
       for (const record of event.product.persuasion ?? []) {

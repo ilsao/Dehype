@@ -47,6 +47,53 @@ describe("DecisionReplayRecorder active views", () => {
 });
 
 describe("DecisionReplayRecorder product clicks", () => {
+  it("adds the active product snapshot to commerce actions", () => {
+    document.body.innerHTML = `
+      <h1 class="_25g_jM0z">Ceramic mug</h1>
+      <span data-testid="current-price">$19.99</span>
+      <button id="add">Add to cart</button>
+    `;
+    window.history.replaceState({}, "", "https://www.temu.com/ca/mug-g-1.html");
+    const events: DecisionEvent[] = [];
+    const recorder = new DecisionReplayRecorder({
+      document,
+      adapter: new TemuProductAdapter(),
+      sendEvent: (event) => events.push(event),
+      now: () => 1000,
+    });
+
+    recorder.start();
+    document.querySelector("#add")?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+
+    expect(events[1]).toMatchObject({
+      action: "ADD_TO_CART",
+      productId: "temu:1",
+      product: { name: "Ceramic mug", currentPrice: "$19.99" },
+    });
+    recorder.stop();
+  });
+
+  it("records checkout without guessing a product on a non-product page", () => {
+    document.body.innerHTML = '<button id="checkout">Checkout</button>';
+    window.history.replaceState({}, "", "https://www.temu.com/ca/cart.html");
+    const events: DecisionEvent[] = [];
+    const recorder = new DecisionReplayRecorder({
+      document,
+      adapter: new TemuProductAdapter(),
+      sendEvent: (event) => events.push(event),
+      now: () => 1000,
+    });
+
+    recorder.start();
+    document.querySelector("#checkout")?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({ action: "CHECKOUT", timestamp: 1000 });
+    expect(events[0]).not.toHaveProperty("productId");
+    expect(events[0]).not.toHaveProperty("product");
+    recorder.stop();
+  });
+
   it("records a product name immediately when a product link is clicked", () => {
     document.body.innerHTML = `
       <a aria-label="Ceramic mug" href="https://www.temu.com/ca/ceramic-mug-g-123456789.html">
