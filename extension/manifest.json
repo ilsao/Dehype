@@ -10,9 +10,7 @@
     "https://generativelanguage.googleapis.com/*",
     "https://api.anthropic.com/*"
   ],
-  "action": {
-    "default_popup": "src/popup/popup.html"
-  },
+  "action": {},
   "side_panel": {
     "default_path": "src/sidepanel/index.html"
   },

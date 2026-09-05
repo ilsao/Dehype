@@ -31,6 +31,14 @@ interface NeutralizeWorkflowResult {
   fallbackReason?: string;
 }
 
+if (typeof chrome !== "undefined" && chrome.sidePanel?.setPanelBehavior) {
+  void chrome.sidePanel
+    .setPanelBehavior({ openPanelOnActionClick: true })
+    .catch(() => {
+      // Chrome may reject this briefly while the extension is reloading.
+    });
+}
+
 if (typeof chrome !== "undefined" && chrome.runtime?.onMessage) {
   chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (isRecord(message) && message.type === "getStatus") {

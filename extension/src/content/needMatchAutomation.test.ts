@@ -179,7 +179,7 @@ describe("Need Match automatic content triggers", () => {
     expect(needMatchMessages()).toHaveLength(0);
   });
 
-  it("skips initial analysis when the popup injected the script for Neutralize", async () => {
+  it("skips initial analysis when the side panel injected the script for Neutralize", async () => {
     storedValues.userNeed = userNeed;
     window.__dehypeSkipInitialNeedMatch = true;
 

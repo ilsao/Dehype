@@ -81,6 +81,17 @@ export interface RestoreCurrentProductResponse {
   type: "DEHYPE_RESTORE_CURRENT_PRODUCT_RESULT";
 }
 
+export interface GetPageStateRequest {
+  type: "DEHYPE_GET_PAGE_STATE";
+}
+
+export interface GetPageStateResponse {
+  type: "DEHYPE_PAGE_STATE_RESULT";
+  neutralized: boolean;
+  priceComparisonActive: boolean;
+  supportedProduct: boolean;
+}
+
 export interface PriceComparisonRequest {
   type: "DEHYPE_PRICE_COMPARISON";
 }
@@ -138,6 +149,8 @@ export type ExtensionMessage =
   | RestoreCurrentProductRequest
   | RebuildCurrentProductResponse
   | RestoreCurrentProductResponse
+  | GetPageStateRequest
+  | GetPageStateResponse
   | ContentScriptErrorResponse
   | PriceComparisonRequest
   | GenerateSearchKeywordRequest
@@ -274,12 +287,14 @@ export function isContentScriptRequest(
 ): value is
   | RebuildCurrentProductRequest
   | RestoreCurrentProductRequest
+  | GetPageStateRequest
   | PriceComparisonRequest
   | ReturnFromSearchRequest {
   return (
     isRecord(value) &&
     (value.type === "DEHYPE_REBUILD_CURRENT_PRODUCT" ||
       value.type === "DEHYPE_RESTORE_CURRENT_PRODUCT" ||
+      value.type === "DEHYPE_GET_PAGE_STATE" ||
       value.type === "DEHYPE_PRICE_COMPARISON" ||
       value.type === "DEHYPE_RETURN_FROM_SEARCH")
   );
