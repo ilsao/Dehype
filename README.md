@@ -18,7 +18,8 @@ npm run build
 `npm run build` type-checks the project and creates an unpacked Chrome
 extension in `dist/`. To inspect it locally, open `chrome://extensions`, enable
 Developer mode, choose **Load unpacked**, and select the generated `dist/`
-directory.
+directory. Do not select the repository root unless you specifically want the
+raw development manifest.
 
 Pull requests run lint, test, and build as separate GitHub Actions checks.
 
@@ -27,6 +28,7 @@ Pull requests run lint, test, and build as separate GitHub Actions checks.
 ```
 .
 ├── AGENTS.md
+├── manifest.json
 ├── extension
 │   ├── img
 │   │   └── Dehype.png

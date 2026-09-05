@@ -2,6 +2,7 @@ import { describe, expect, expectTypeOf, it } from "vitest";
 
 import type {
   Elem,
+  NeutralizeProductValuesRequest,
   NeutralizedProductValues,
   ProductInfo,
 } from "./productInfo";
@@ -44,7 +45,132 @@ describe("ProductInfo contract", () => {
   });
 });
 
+describe("Hype2.md ProductInfo requirement", () => {
+  it("sends only field values from the documented ProductInfo shape to AI", () => {
+    const productInfo: ProductInfo = {
+      name: { id: "name-dom-node", value: "HOT SALE Wireless Earbuds!" },
+      originPrize: { id: "origin-price-dom-node", value: "$49.99" },
+      realPrize: { id: "real-price-dom-node", value: "$12.99 today only" },
+      discount: { id: "discount-dom-node", value: "74% OFF limited time" },
+      image: {
+        id: "image-dom-node",
+        value: "https://example.invalid/earbuds.png",
+      },
+      description: {
+        id: "description-dom-node",
+        value: "Must-have viral earbuds with flash sale bonus",
+      },
+      stockAmount: { id: "stock-dom-node", value: "Only 3 left" },
+    };
+
+    const requestForAi: NeutralizeProductValuesRequest = {
+      type: "DEHYPE_NEUTRALIZE_VALUES",
+      productValues: toValueOnlyProductInfo(productInfo),
+    };
+
+    expect(requestForAi.productValues).toEqual({
+      name: "HOT SALE Wireless Earbuds!",
+      originPrize: "$49.99",
+      realPrize: "$12.99 today only",
+      discount: "74% OFF limited time",
+      image: "https://example.invalid/earbuds.png",
+      description: "Must-have viral earbuds with flash sale bonus",
+      stockAmount: "Only 3 left",
+    });
+    expect(Object.keys(requestForAi.productValues)).toEqual([
+      "name",
+      "originPrize",
+      "realPrize",
+      "discount",
+      "image",
+      "description",
+      "stockAmount",
+    ]);
+    expect(Object.values(requestForAi.productValues)).toSatisfy(
+      (values: unknown[]) => values.every((value) => typeof value === "string"),
+    );
+    expect(JSON.stringify(requestForAi.productValues)).not.toContain("dom-node");
+    expect(JSON.stringify(requestForAi.productValues)).not.toContain('"id"');
+  });
+
+  it("applies neutralized AI values back to the same local elements", () => {
+    const originalProductInfo: ProductInfo = {
+      name: { id: "name-dom-node", value: "HOT SALE Wireless Earbuds!" },
+      realPrize: { id: "real-price-dom-node", value: "$12.99 today only" },
+      discount: { id: "discount-dom-node", value: "74% OFF limited time" },
+      description: {
+        id: "description-dom-node",
+        value: "Must-have viral earbuds with flash sale bonus",
+      },
+      stockAmount: { id: "stock-dom-node", value: "Only 3 left" },
+    };
+    const neutralizedValues: NeutralizedProductValues = {
+      name: "Wireless Earbuds",
+      realPrize: "$12.99",
+      discount: "74% discount listed",
+      description: "Wireless earbuds with listed product details.",
+      stockAmount: "Listed stock quantity: 3",
+    };
+
+    const neutralizedProductInfo = mergeNeutralizedValuesIntoProductInfo(
+      originalProductInfo,
+      neutralizedValues,
+    );
+
+    expect(neutralizedProductInfo).toEqual({
+      name: { id: "name-dom-node", value: "Wireless Earbuds" },
+      realPrize: { id: "real-price-dom-node", value: "$12.99" },
+      discount: { id: "discount-dom-node", value: "74% discount listed" },
+      description: {
+        id: "description-dom-node",
+        value: "Wireless earbuds with listed product details.",
+      },
+      stockAmount: {
+        id: "stock-dom-node",
+        value: "Listed stock quantity: 3",
+      },
+    });
+  });
+});
+
 describe("ProductInfo AI payload safety", () => {
+  it("builds an AI request from ProductInfo values without element ids", () => {
+    const productInfo: ProductInfo = {
+      name: { id: "name-element", value: "Flash Deal Phone Case!" },
+      originPrize: { id: "origin-price-element", value: "$24.99" },
+      realPrize: { id: "real-price-element", value: "$8.99" },
+      discount: { id: "discount-element", value: "64% OFF today only" },
+      image: { id: "image-element", value: "https://example.invalid/case.png" },
+      description: {
+        id: "description-element",
+        value: "Trending must-have phone case",
+      },
+      stockAmount: { id: "stock-element", value: "Only 2 left" },
+    };
+
+    const request: NeutralizeProductValuesRequest = {
+      type: "DEHYPE_NEUTRALIZE_VALUES",
+      productValues: toValueOnlyProductInfo(productInfo),
+    };
+
+    expect(request).toEqual({
+      type: "DEHYPE_NEUTRALIZE_VALUES",
+      productValues: {
+        name: "Flash Deal Phone Case!",
+        originPrize: "$24.99",
+        realPrize: "$8.99",
+        discount: "64% OFF today only",
+        image: "https://example.invalid/case.png",
+        description: "Trending must-have phone case",
+        stockAmount: "Only 2 left",
+      },
+    });
+    expect(JSON.stringify(request.productValues)).not.toContain("element");
+    expect(Object.values(request.productValues)).toSatisfy((values: unknown[]) =>
+      values.every((value) => typeof value === "string"),
+    );
+  });
+
   it("creates a value-only payload without DOM ids", () => {
     const productInfo: ProductInfo = {
       name: { id: "name-dom-id", value: "Hot Sale Wireless Earbuds!" },
