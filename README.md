@@ -17,9 +17,15 @@ npm run build
 
 `npm run build` type-checks the project and creates an unpacked Chrome
 extension in `dist/`. To inspect it locally, open `chrome://extensions`, enable
-Developer mode, choose **Load unpacked**, and select the generated `dist/`
-directory. Do not select the repository root unless you specifically want the
-raw development manifest.
+Developer mode, choose **Load unpacked**, and select either the generated
+`dist/` directory or the repository root. The root development manifest also
+points to the generated files, so rebuild before reloading the extension.
+
+The popup stores the selected AI provider, model, and API key in
+`chrome.storage.local`. This is intended for personal testing: the key is not
+committed to Git, but it is not encrypted and remains accessible to the local
+Chrome profile. Use a server-side secret store before distributing the
+extension to other users.
 
 Pull requests run lint, test, and build as separate GitHub Actions checks.
 
@@ -35,13 +41,14 @@ Pull requests run lint, test, and build as separate GitHub Actions checks.
 │   ├── manifest.json
 │   └── src
 │       ├── background
-│       │   └── serviceWorker.ts
+│       │   ├── aiProvider.js
+│       │   └── background.js
 │       ├── content
 │       │   └── index.ts
 │       ├── popup
-│       │   ├── hello.html
-│       │   ├── index.html
-│       │   └── main.tsx
+│       │   ├── popup.css
+│       │   ├── popup.html
+│       │   └── popup.js
 │       └── sidepanel
 │           ├── index.html
 │           └── main.tsx

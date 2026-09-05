@@ -10,7 +10,6 @@
     "lint": "eslint .",
     "test": "vitest run",
     "test:watch": "vitest",
-    "playground:neutralize": "node tools/neutralize-playground.mjs",
     "build": "tsc --noEmit && vite build && npm run validate:build",
     "validate:build": "node scripts/validate-build.mjs"
   },

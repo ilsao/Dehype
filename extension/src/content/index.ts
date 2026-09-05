@@ -1,4 +1,6 @@
 import type {
+  NeutralizeProductInfoErrorResponse,
+  NeutralizeProductValuesResponse,
   NeutralizedProductValues,
   ProductElement,
   ProductInfo,
@@ -41,6 +43,10 @@ type ContentScriptMessage =
   | RebuildCurrentProductMessage
   | RestoreCurrentProductMessage;
 
+type NeutralizeResponse =
+  | NeutralizeProductValuesResponse
+  | NeutralizeProductInfoErrorResponse;
+
 const originalTextByElementId = new Map<string, string>();
 
 chrome.runtime.onMessage.addListener(
@@ -54,7 +60,14 @@ chrome.runtime.onMessage.addListener(
     }
 
     if (message.type === "DEHYPE_REBUILD_CURRENT_PRODUCT") {
-      void rebuildCurrentProduct().then(sendResponse);
+      void rebuildCurrentProduct()
+        .then(sendResponse)
+        .catch((error) =>
+          sendResponse({
+            ok: false,
+            error: error instanceof Error ? error.message : String(error),
+          }),
+        );
       return true;
     }
 
@@ -140,10 +153,16 @@ function extractProductInfoFromPage(): ProductInfo | null {
 async function requestNeutralizedValues(
   valueOnlyPayloadForAi: ProductInfoValueOnly,
 ): Promise<NeutralizedProductValues> {
-  return chrome.runtime.sendMessage<NeutralizedProductValues>({
+  const response = await chrome.runtime.sendMessage<NeutralizeResponse>({
     type: "DEHYPE_NEUTRALIZE_VALUES",
     productValues: valueOnlyPayloadForAi,
   });
+
+  if (response.type === "DEHYPE_NEUTRALIZE_PRODUCT_INFO_ERROR") {
+    throw new Error(response.message);
+  }
+
+  return response.productValues;
 }
 
 function applyProductInfoText(productInfo: ProductInfo): void {

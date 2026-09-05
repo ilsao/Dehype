@@ -1,42 +1,150 @@
-const closeBtn = document.getElementById('close-btn');
-const neutralizeBtn = document.getElementById('neutralize-btn');
-const restoreBtn = document.getElementById('restore-btn');
-const statusIndicator = document.getElementById('status-indicator');
+import {
+  defaultModelForProvider,
+  loadAiSettings,
+  saveAiSettings,
+} from "../shared/aiSettings.js";
+import {
+  productInfoValues,
+  sendMessageToActiveTab,
+} from "./popupActions.js";
 
-// 關閉視窗
-closeBtn.addEventListener('click', () => {
-  window.close();
+const closeButton = document.querySelector("#close-btn");
+const settingsForm = document.querySelector("#settings-form");
+const providerInput = document.querySelector("#provider");
+const modelInput = document.querySelector("#model");
+const apiKeyInput = document.querySelector("#api-key");
+const saveButton = document.querySelector("#save-btn");
+const neutralizeButton = document.querySelector("#neutralize-btn");
+const restoreButton = document.querySelector("#restore-btn");
+const modelResult = document.querySelector("#model-result");
+const modelOutput = document.querySelector("#model-output");
+const statusIndicator = document.querySelector("#status-indicator");
+const statusText = document.querySelector("#status-text");
+
+let previousProvider = providerInput.value;
+
+closeButton.addEventListener("click", () => window.close());
+
+providerInput.addEventListener("change", () => {
+  const previousDefault = defaultModelForProvider(previousProvider);
+
+  if (!modelInput.value.trim() || modelInput.value === previousDefault) {
+    modelInput.value = defaultModelForProvider(providerInput.value);
+  }
+
+  previousProvider = providerInput.value;
 });
 
-// 點擊 Neutralize 切換狀態
-neutralizeBtn.addEventListener('click', () => {
-  neutralizeBtn.classList.add('active');
-  restoreBtn.classList.remove('active');
-  console.log('[Dehype] Neutralize clicked');
+settingsForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  setButtonsDisabled(true);
+
+  try {
+    await saveCurrentSettings();
+    setStatus("AI settings saved locally.", "success");
+  } catch (error) {
+    setStatus(errorMessage(error), "error");
+  } finally {
+    setButtonsDisabled(false);
+  }
 });
 
-// 點擊 Restore 切換狀態
-restoreBtn.addEventListener('click', () => {
-  restoreBtn.classList.add('active');
-  neutralizeBtn.classList.remove('active');
-  console.log('[Dehype] Restore clicked');
+neutralizeButton.addEventListener("click", async () => {
+  setButtonsDisabled(true);
+  setStatus("Analyzing this product...", "neutral");
+
+  try {
+    await saveCurrentSettings();
+    const response = await sendMessageToActiveTab(chrome.tabs, {
+      type: "DEHYPE_REBUILD_CURRENT_PRODUCT",
+    });
+
+    if (!response.ok) {
+      throw new Error(response.error ?? "The product could not be analyzed.");
+    }
+
+    modelOutput.textContent = JSON.stringify(
+      productInfoValues(response.productInfo),
+      null,
+      2,
+    );
+    modelResult.hidden = false;
+    setStatus("Product text was neutralized.", "success");
+  } catch (error) {
+    modelResult.hidden = true;
+    setStatus(errorMessage(error), "error");
+  } finally {
+    setButtonsDisabled(false);
+  }
 });
 
-// 狀態更新
-function setStatus(isHealthy) {
-  if (isHealthy) {
-    statusIndicator.className = 'status-green';
-  } else {
-    statusIndicator.className = 'status-gray';
+restoreButton.addEventListener("click", async () => {
+  setButtonsDisabled(true);
+  setStatus("Restoring the original text...", "neutral");
+
+  try {
+    const response = await sendMessageToActiveTab(chrome.tabs, {
+      type: "DEHYPE_RESTORE_CURRENT_PRODUCT",
+    });
+
+    if (!response.ok) {
+      throw new Error(response.error ?? "The page could not be restored.");
+    }
+
+    modelResult.hidden = true;
+    setStatus("Original product text restored.", "success");
+  } catch (error) {
+    setStatus(errorMessage(error), "error");
+  } finally {
+    setButtonsDisabled(false);
+  }
+});
+
+void loadSavedSettings();
+
+async function loadSavedSettings() {
+  if (!globalThis.chrome?.storage?.local) {
+    setStatus("Open this popup from the installed Chrome extension.", "neutral");
+    return;
+  }
+
+  try {
+    const settings = await loadAiSettings(chrome.storage.local);
+
+    if (!settings) {
+      setStatus("Enter and save your AI settings.", "neutral");
+      return;
+    }
+
+    providerInput.value = settings.provider;
+    previousProvider = settings.provider;
+    modelInput.value = settings.model;
+    apiKeyInput.value = settings.apiKey;
+    setStatus("AI settings loaded.", "success");
+  } catch (error) {
+    setStatus(errorMessage(error), "error");
   }
 }
 
-setStatus(true);
+async function saveCurrentSettings() {
+  return saveAiSettings(chrome.storage.local, {
+    provider: providerInput.value,
+    model: modelInput.value,
+    apiKey: apiKeyInput.value,
+  });
+}
 
-chrome.runtime.sendMessage({ type: 'getStatus' }, (response) => {
-  if (chrome.runtime.lastError) {
-     setStatus(false);
-  } else {
-     setStatus(response?.healthy ?? true);
-  }
-});
+function setButtonsDisabled(disabled) {
+  saveButton.disabled = disabled;
+  neutralizeButton.disabled = disabled;
+  restoreButton.disabled = disabled;
+}
+
+function setStatus(message, state) {
+  statusText.textContent = message;
+  statusIndicator.className = `status-${state}`;
+}
+
+function errorMessage(error) {
+  return error instanceof Error ? error.message : String(error);
+}
