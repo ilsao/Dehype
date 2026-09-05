@@ -108,11 +108,14 @@ const DEEMPHASIS_RULES = [
 }[];
 
 const PRIMARY_ACTION_TEXT =
-  /^(?:add to cart|加入購物車|加入购物车|add to bag)$/i;
+  /^(?:add to cart|加入購物車|加入购物车|add to bag)(?:\s|$)/i;
 const CART_DESTINATION_TEXT = /^(?:go to cart|前往購物車|前往购物车)$/i;
 const PROMOTIONAL_CART_TEXT =
   /(?:^|\s)-?\d+(?:[.,]\d+)?%\s+now!?.*(?:\badd to cart!?|加入購物車!?|加入购物车!?)/i;
-const STANDALONE_PROMOTION_HEADING = /^\s*big sale\s*$/i;
+const PROMOTIONAL_CARD_HEADING =
+  /^\s*(?:big\s+sale|(?:amazing|great|top|hot)[\s\-–—:!]*(?:find|deal|pick|offer)s?)[!?.\s]*$/i;
+const URGENCY_BADGE_TEXT =
+  /^\s*(?:last|final)[\s\-–—:!]*(?:day|\d{1,3})[!?.\s]*$/i;
 const DELIVERY_TEXT =
   /^(?:free shipping for this item|arrives? in .+|ships? earliest .+|此商品免運|此商品免运|預計.+送達|预计.+送达)/i;
 
@@ -436,7 +439,7 @@ export class TemuProductAdapter implements ProductAdapter {
       targets,
       findStandalonePromotionContainers(
         document,
-        STANDALONE_PROMOTION_HEADING,
+        PROMOTIONAL_CARD_HEADING,
       ),
       "suppress",
       "promotion",
@@ -444,7 +447,7 @@ export class TemuProductAdapter implements ProductAdapter {
     );
     addTargets(
       targets,
-      interactiveElementsWithText(document, PRIMARY_ACTION_TEXT),
+      primaryActionControls(document),
       "deemphasize",
       "promotion",
       "neutral-action",
@@ -455,6 +458,13 @@ export class TemuProductAdapter implements ProductAdapter {
       "deemphasize",
       "promotion",
       "neutral-fact",
+    );
+    addTargets(
+      targets,
+      findUrgencyBadgeContainers(document),
+      "suppress",
+      "countdown",
+      "hidden-container",
     );
     addTargets(
       targets,
@@ -474,14 +484,14 @@ export class TemuProductAdapter implements ProductAdapter {
     const commerceControls = Array.from(
       document.querySelectorAll<HTMLElement>('button, [role="button"]'),
     ).filter((control) =>
-      PRIMARY_ACTION_TEXT.test(textValue(control)) ||
+      isPrimaryActionControl(control) ||
       PROMOTIONAL_CART_TEXT.test(textValue(control)),
     );
     const removalTargets = [...targets.values()].filter(({ action }) => action !== "deemphasize");
     const usableControls = commerceControls.filter(isVisibleUsableControl);
     const retainedControls = usableControls.filter((control) =>
       !removalTargets.some(({ element }) => element.contains(control)) &&
-      PRIMARY_ACTION_TEXT.test(textValue(control)),
+      isPrimaryActionControl(control),
     );
     if (retainedControls.length === 0) {
       const fallback = usableControls.find((control) =>
@@ -623,6 +633,22 @@ function interactiveElementsWithText(
   ).filter((element) => pattern.test(textValue(element)));
 }
 
+function primaryActionControls(document: Document): HTMLElement[] {
+  return Array.from(
+    document.querySelectorAll<HTMLElement>('button, [role="button"]'),
+  ).filter(isPrimaryActionControl);
+}
+
+function isPrimaryActionControl(element: HTMLElement): boolean {
+  return (
+    PRIMARY_ACTION_TEXT.test(textValue(element)) ||
+    PRIMARY_ACTION_TEXT.test(ownText(element)) ||
+    Array.from(
+      element.querySelectorAll<HTMLElement>("span, div, p, strong, em"),
+    ).some((label) => PRIMARY_ACTION_TEXT.test(ownText(label)))
+  );
+}
+
 function neutralCartText(value: string): string | undefined {
   if (!PROMOTIONAL_CART_TEXT.test(value)) return undefined;
   if (/加入購物車/.test(value)) return "加入購物車";
@@ -659,12 +685,10 @@ function findRedundantPromotionalCartControls(
   ).filter(
     (element) =>
       isVisibleUsableControl(element) &&
-      (PRIMARY_ACTION_TEXT.test(textValue(element)) ||
+      (isPrimaryActionControl(element) ||
         CART_DESTINATION_TEXT.test(textValue(element))),
   );
-  const upperPromotionalCards = new Set(
-    findUpperPromotionalCartCards(document),
-  );
+  const upperPromotionalCards = new Set(findUpperPromotionalCartCards(document));
 
   return Array.from(
     productPanel.querySelectorAll<HTMLElement>('button, [role="button"]'),
@@ -693,14 +717,14 @@ function findUpperPromotionalCartCards(document: Document): HTMLElement[] {
     productPanel.querySelectorAll<HTMLElement>('button, [role="button"]'),
   ).filter(
     (element) =>
-      isVisibleUsableControl(element) && PRIMARY_ACTION_TEXT.test(textValue(element)),
+      isVisibleUsableControl(element) && isPrimaryActionControl(element),
   );
   if (primaryControls.length === 0) return [];
 
   const cards = new Set<HTMLElement>();
   for (const heading of elementsWithOwnText(
     document,
-    STANDALONE_PROMOTION_HEADING,
+    PROMOTIONAL_CARD_HEADING,
   )) {
     if (!productPanel.contains(heading)) continue;
     let current: HTMLElement | null = heading;
@@ -717,6 +741,27 @@ function findUpperPromotionalCartCards(document: Document): HTMLElement[] {
     if (card) cards.add(card);
   }
   return [...cards];
+}
+
+function findUrgencyBadgeContainers(document: Document): HTMLElement[] {
+  const badges = new Set<HTMLElement>();
+  for (const label of elementsWithOwnText(document, URGENCY_BADGE_TEXT)) {
+    let badge = label;
+    let current = label.parentElement;
+    for (let depth = 0; current && depth < 4; depth += 1) {
+      if (
+        current.matches("body, html, #rightContent, #mainHeader, main, [role='main']") ||
+        current.hasAttribute(DEHYPE_ELEMENT_ID) ||
+        textValue(current) !== textValue(label)
+      ) {
+        break;
+      }
+      badge = current;
+      current = current.parentElement;
+    }
+    badges.add(badge);
+  }
+  return [...badges];
 }
 
 

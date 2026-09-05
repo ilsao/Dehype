@@ -250,6 +250,48 @@ describe("content-script integration", () => {
     expect(document.querySelector("#lower-promotional-action")).not.toBeNull();
   });
 
+  it("suppresses screenshot-style offer and urgency containers across rescans and restores them", async () => {
+    document.body.innerHTML = `
+      <main>
+        <h1 class="_25g_jM0z">Taper drill bits</h1>
+        <div data-testid="current-price">$12.99</div>
+        <div id="last-day-badge"><span>LAST DAY</span></div>
+        <div id="final-badge"><span>FINAL 45</span></div>
+        <div id="rightContent">
+          <section id="amazing-find-card">
+            <header><strong>AMAZING FIND</strong><span>Shop on Temu</span></header>
+            <div>Model: 5–35mm Tapering Drill 3pcs</div>
+            <label>Qty <select><option>1</option></select></label>
+            <button>Add to cart</button>
+          </section>
+          <div role="button" id="primary-cart"><div><span>Add to cart</span><span>Arrives in 3 business days</span></div></div>
+        </div>
+      </main>
+    `;
+
+    await rebuildCurrentProduct();
+    for (const [id, presentation] of [
+      ["amazing-find-card", "removed-container"],
+      ["last-day-badge", "hidden-container"],
+      ["final-badge", "hidden-container"],
+    ] as const) {
+      expect(document.querySelector(`#${id}`)?.getAttribute(
+        "data-dehype-suppressed",
+      )).toBe(presentation);
+    }
+
+    document.querySelector("#rightContent")?.append(document.createElement("span"));
+    await new Promise((resolve) => window.setTimeout(resolve));
+    expect(document.querySelector("#amazing-find-card")?.getAttribute(
+      "data-dehype-suppressed",
+    )).toBe("removed-container");
+
+    restoreCurrentProduct();
+    expect(document.querySelectorAll("[data-dehype-suppressed]")).toHaveLength(0);
+    expect(document.querySelector("#amazing-find-card")).not.toBeNull();
+    expect(document.querySelector("#primary-cart")).not.toBeNull();
+  });
+
   it("returns an error when analysis has no visible DOM target", async () => {
     vi.useFakeTimers();
     document.body.innerHTML = "";

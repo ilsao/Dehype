@@ -477,6 +477,120 @@ describe("TemuProductAdapter", () => {
     });
   });
 
+  it("targets the complete promotional card and urgency badge containers", () => {
+    const document = new DOMParser().parseFromString(
+      `
+        <div id="urgency-row">
+          <div id="last-day-badge"><span>LAST DAY</span></div>
+          <div id="final-badge"><span>FINAL 45</span></div>
+        </div>
+        <div id="rightContent">
+          <section id="amazing-find-card">
+            <header><strong>AMAZING FIND</strong><span>Shop on Temu</span></header>
+            <div><img src="product.png"><span>Model: Drill 3pcs</span></div>
+            <label>Qty <select><option>1</option></select></label>
+            <button id="card-cart">Add to cart</button>
+          </section>
+          <div role="button" id="primary-cart"><div><span>Add to cart</span><span>Arrives in 3 business days</span></div></div>
+        </div>
+      `,
+      "text/html",
+    );
+
+    const targets = new TemuProductAdapter().findNeutralizationTargets(document);
+    const target = (id: string) =>
+      targets.find(({ element }) => element.id === id);
+
+    expect(target("amazing-find-card")).toMatchObject({
+      action: "remove",
+      reason: "promotion",
+      presentation: "removed-container",
+    });
+    expect(target("last-day-badge")).toMatchObject({
+      action: "suppress",
+      reason: "countdown",
+      presentation: "hidden-container",
+    });
+    expect(target("final-badge")).toMatchObject({
+      action: "suppress",
+      reason: "countdown",
+      presentation: "hidden-container",
+    });
+  });
+
+  it.each(["Great Find", "Top Pick", "Hot Deal", "Amazing Offer"])(
+    "recognizes the %s promotional-card heading",
+    (heading) => {
+      const document = new DOMParser().parseFromString(
+        `<div id="rightContent">
+          <section id="offer-card"><strong>${heading}</strong><button>Add to cart</button></section>
+          <button id="primary-cart">Add to cart</button>
+        </div>`,
+        "text/html",
+      );
+
+      expect(
+        new TemuProductAdapter()
+          .findNeutralizationTargets(document)
+          .find(({ element }) => element.id === "offer-card"),
+      ).toMatchObject({ action: "remove", reason: "promotion" });
+    },
+  );
+
+  it.each(["Final Day", "Last 30", "final-day!", "LAST: 7"])(
+    "recognizes the %s urgency badge",
+    (copy) => {
+      const document = new DOMParser().parseFromString(
+        `<div id="badge"><span>${copy}</span></div>`,
+        "text/html",
+      );
+
+      expect(
+        new TemuProductAdapter()
+          .findNeutralizationTargets(document)
+          .find(({ element }) => element.id === "badge"),
+      ).toMatchObject({ action: "suppress", reason: "countdown" });
+    },
+  );
+
+  it("does not require promotional blocks or match isolated generic words", () => {
+    const document = new DOMParser().parseFromString(
+      `<div id="rightContent">
+        <h1>Amazing cordless drill</h1>
+        <p>The final specification is available.</p>
+        <span>45</span>
+        <button id="primary-cart">Add to cart</button>
+      </div>`,
+      "text/html",
+    );
+    const targets = new TemuProductAdapter().findNeutralizationTargets(document);
+
+    expect(targets.some(({ action }) => action === "remove")).toBe(false);
+    expect(targets.filter(({ reason }) => reason === "countdown")).toEqual([]);
+  });
+
+  it("keeps the only purchase card and neutralizes its promotional heading", () => {
+    const document = new DOMParser().parseFromString(
+      `<div id="rightContent">
+        <section id="only-card">
+          <strong id="heading">AMAZING FIND</strong>
+          <button id="only-cart">Add to cart</button>
+        </section>
+      </div>`,
+      "text/html",
+    );
+    const targets = new TemuProductAdapter().findNeutralizationTargets(document);
+
+    expect(targets.find(({ element }) => element.id === "only-card")).toBeUndefined();
+    expect(targets.find(({ element }) => element.id === "heading")).toMatchObject({
+      action: "suppress",
+      reason: "promotion",
+    });
+    expect(targets.find(({ element }) => element.id === "only-cart")).toMatchObject({
+      action: "deemphasize",
+    });
+  });
+
   it("preserves a visible promotional cart control when the plain cart control is hidden", () => {
     const document = new DOMParser().parseFromString(
       `
