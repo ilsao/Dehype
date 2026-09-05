@@ -12,6 +12,14 @@
   },
   "icons": {
     "32": "img/Dehype.png"
-
-  }
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": [
+        "src/content/neutralizer.js",
+        "src/content/index.js"
+      ]
+    }
+  ]
 }

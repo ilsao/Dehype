@@ -1,4 +1,4 @@
-import { copyFile, mkdir } from "node:fs/promises";
+import { copyFile, mkdir, readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { defineConfig, type Plugin } from "vite";
 
@@ -13,9 +13,24 @@ function copyExtensionMetadata(): Plugin {
     async closeBundle() {
       await mkdir(resolve(outputRoot, "img"), { recursive: true });
       await Promise.all([
-        copyFile(
-          resolve(extensionRoot, "manifest.json"),
+        writeFile(
           resolve(outputRoot, "manifest.json"),
+          JSON.stringify(
+            {
+              ...JSON.parse(
+                await readFile(resolve(extensionRoot, "manifest.json"), "utf8"),
+              ),
+              background: { service_worker: "assets/background.js" },
+              content_scripts: [
+                {
+                  matches: ["<all_urls>"],
+                  js: ["assets/content.js"],
+                },
+              ],
+            },
+            null,
+            2,
+          ),
         ),
         copyFile(
           resolve(extensionRoot, "img/Dehype.png"),
@@ -38,7 +53,7 @@ export default defineConfig({
         popup: resolve(extensionRoot, "src/popup/popup.html"),
         sidepanel: resolve(extensionRoot, "src/sidepanel/index.html"),
         background: resolve(extensionRoot, "src/background/background.js"),
-        content: resolve(extensionRoot, "src/content/index.ts"),
+        content: resolve(extensionRoot, "src/content/bundle.js"),
       },
       preserveEntrySignatures: "strict",
       output: {
