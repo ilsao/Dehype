@@ -7,8 +7,9 @@ import {
 } from "../shared/aiSettings.js";
 import {
   analyzeNeedMatchWithSavedSettings,
+  generateKeywordWithSavedSettings,
   neutralizeWithSavedSettings,
-} from "./background.js";
+} from "./background.ts";
 
 const productValues = {
   name: "HOT SALE Wireless Earbuds!",
@@ -51,6 +52,15 @@ function storage(settings, extraValues = {}) {
 }
 
 describe("background neutralization coordinator", () => {
+  it("uses a local keyword when AI is not configured", async () => {
+    await expect(
+      generateKeywordWithSavedSettings(
+        "Sparkling Cat Eye Gel Polish - Magnetic Glitter",
+        { storage: storage() },
+      ),
+    ).resolves.toBe("Sparkling Cat Eye Gel Polish Magnetic");
+  });
+
   it("preserves original values for structural cleanup without AI settings", async () => {
     await expect(
       neutralizeWithSavedSettings(productValues, { storage: storage() }),

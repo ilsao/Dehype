@@ -65,6 +65,7 @@ const expectedFiles = [
   builtManifest.side_panel?.default_path,
   builtManifest.background?.service_worker,
   builtManifest.icons?.["32"],
+  builtManifest.side_panel?.default_path,
   ...(builtManifest.content_scripts ?? []).flatMap((entry) => entry.js ?? []),
 ].filter((value) => typeof value === "string");
 

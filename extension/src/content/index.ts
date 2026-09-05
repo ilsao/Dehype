@@ -1,4 +1,5 @@
 import { TemuProductAdapter } from "../adapters/temuProductAdapter";
+import { TemuSearchAdapter } from "../adapters/temuSearchAdapter";
 import {
   applyInlineRebuild,
   type InlineRebuildHandle,
@@ -10,6 +11,8 @@ import type {
   ProductInfoValueOnly,
   RebuildCurrentProductResponse,
   RestoreCurrentProductResponse,
+  PriceComparisonErrorResponse,
+  PriceComparisonResult,
 } from "../shared/productInfo";
 import {
   isContentScriptRequest,
@@ -23,8 +26,16 @@ import {
   USER_NEED_STORAGE_KEY,
   type UserNeed,
 } from "../shared/userNeed";
+import {
+  type ComparableProduct,
+  parsePrice,
+  selectRandomProducts,
+  summarizePrices,
+} from "../shared/priceComparison";
 
 const productAdapter = new TemuProductAdapter();
+const searchAdapter = new TemuSearchAdapter();
+const SEARCH_STATE_KEY = "dehype-price-search-state";
 const EXTRACTION_TIMEOUT_MS = 1_500;
 const EXTRACTION_DEBOUNCE_MS = 75;
 const NEED_MATCH_TRIGGER_DEBOUNCE_MS = 250;
@@ -41,7 +52,9 @@ interface WaitOptions {
 type ContentResponse =
   | RebuildCurrentProductResponse
   | RestoreCurrentProductResponse
-  | ContentScriptErrorResponse;
+  | ContentScriptErrorResponse
+  | PriceComparisonResult
+  | PriceComparisonErrorResponse;
 
 let activeRebuild: InlineRebuildHandle | undefined;
 let activeResponse: RebuildCurrentProductResponse | undefined;
@@ -221,13 +234,230 @@ export function handleContentMessage(
 ): boolean {
   if (!isContentScriptRequest(message)) return false;
 
+  if (message.type === "DEHYPE_RETURN_FROM_SEARCH") {
+    returnFromSearch();
+    sendResponse({ type: "DEHYPE_PRICE_COMPARISON_ERROR", message: "Returning to the original product page." });
+    return false;
+  }
+
   if (message.type === "DEHYPE_RESTORE_CURRENT_PRODUCT") {
     sendResponse(restoreCurrentProduct());
     return false;
   }
 
+  if (message.type === "DEHYPE_PRICE_COMPARISON") {
+    void compareCurrentProduct().then(sendResponse);
+    return true;
+  }
+
   void rebuildCurrentProduct().then(sendResponse);
   return true;
+}
+
+export async function searchTemu(keyword: string): Promise<unknown> {
+  const pageUrl = new URL(window.location.href);
+  const localePrefix = /^\/(?:[a-z]{2}(?:-[a-z]{2})?)\//i.test(pageUrl.pathname)
+    ? pageUrl.pathname.split("/").slice(0, 2).join("/")
+    : "";
+  const pageSn = pageUrl.pathname.includes("search_result") ? 10009 : 10032;
+  const response = await fetch(
+    `${pageUrl.origin}${localePrefix}/api/poppy/v2/search_activation?scene=search_activation`,
+    {
+      method: "POST",
+      credentials: "include",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        scene: "search_activation",
+        listId: crypto.randomUUID().replaceAll("-", ""),
+        pageSn,
+        moduleCustomReqMap: { "200256": { pageSize: 50, offset: 0 } },
+        historical_words: [],
+        query: keyword,
+      }),
+    },
+  );
+  const responseBody: unknown = await response.json().catch(() => undefined);
+  if (!response.ok) {
+    const apiError = isRecord(responseBody) && isRecord(responseBody.result)
+      ? responseBody.result
+      : responseBody;
+    const errorCode = isRecord(responseBody) &&
+      typeof responseBody.error_code === "number"
+      ? `, error_code ${responseBody.error_code}`
+      : "";
+    const message = isRecord(apiError) && typeof apiError.message === "string"
+      ? apiError.message
+      : response.status === 429
+        ? "Temu temporarily rate-limited this browser session. Try again later."
+        : "Temu rejected the request.";
+    throw new Error(`Temu Search API failed (${response.status}${errorCode}): ${message}`);
+  }
+  return responseBody;
+}
+
+async function compareCurrentProduct(): Promise<ContentResponse> {
+  try {
+    const productInfo = await waitForCurrentProduct(document);
+    if (!productInfo) throw new Error("No supported Temu product was found on this page.");
+    const keywordResponse: unknown = await chrome.runtime.sendMessage({
+      type: "DEHYPE_GENERATE_SEARCH_KEYWORD",
+      productName: productInfo.name.value,
+    });
+    if (!isKeywordResponse(keywordResponse)) {
+      throw new Error(isErrorResponse(keywordResponse) ? keywordResponse.message : "The keyword service returned an invalid response.");
+    }
+    const rawResponse = await searchTemu(keywordResponse.searchKeyword);
+    const products = extractComparableProducts(rawResponse);
+    const selectedProducts = selectRandomProducts(products);
+    const summary = summarizePrices(selectedProducts.map(({ price }) => price));
+    if (!summary) throw new Error("Temu returned no products with valid prices.");
+    return {
+      type: "DEHYPE_PRICE_COMPARISON_RESULT",
+      source: "api",
+      productName: productInfo.name.value,
+      searchKeyword: keywordResponse.searchKeyword,
+      products: selectedProducts,
+      ...summary,
+    };
+  } catch (error) {
+    if (isRateLimitError(error)) {
+      const productInfo = await waitForCurrentProduct(document);
+      if (productInfo) {
+        beginDomSearch(productInfo, await getSearchKeyword(productInfo.name.value));
+        return {
+          type: "DEHYPE_PRICE_COMPARISON_ERROR",
+          message: "Temu API is rate-limited. Opening the Temu search page to compare rendered results.",
+        };
+      }
+    }
+    return {
+      type: "DEHYPE_PRICE_COMPARISON_ERROR",
+      message: error instanceof Error ? error.message : String(error),
+    };
+  }
+}
+
+async function getSearchKeyword(productName: string): Promise<string> {
+  const response: unknown = await chrome.runtime.sendMessage({
+    type: "DEHYPE_GENERATE_SEARCH_KEYWORD",
+    productName,
+  });
+  if (isKeywordResponse(response)) return response.searchKeyword;
+  throw new Error(isErrorResponse(response) ? response.message : "The keyword service returned an invalid response.");
+}
+
+function beginDomSearch(productInfo: ProductInfo, keyword: string): void {
+  sessionStorage.setItem(SEARCH_STATE_KEY, JSON.stringify({
+    originalUrl: window.location.href,
+    productName: productInfo.name.value,
+    keyword,
+  }));
+  window.location.assign(searchAdapter.buildSearchUrl(keyword, window.location.href));
+}
+
+async function resumeDomSearch(): Promise<void> {
+  if (!searchAdapter.isSearchPage(window.location.href)) return;
+  const rawState = sessionStorage.getItem(SEARCH_STATE_KEY);
+  if (!rawState) return;
+  let state: { originalUrl: string; productName: string; keyword: string };
+  try {
+    state = JSON.parse(rawState) as typeof state;
+  } catch {
+    sessionStorage.removeItem(SEARCH_STATE_KEY);
+    return;
+  }
+  const products = await waitForSearchProducts();
+  const selectedProducts = selectRandomProducts(products);
+  const summary = summarizePrices(selectedProducts.map(({ price }) => price));
+  if (!summary) {
+    chrome.runtime.sendMessage({
+      type: "DEHYPE_PRICE_COMPARISON_ERROR",
+      message: "Temu search page loaded, but no products with readable prices were found.",
+    });
+    return;
+  }
+  chrome.runtime.sendMessage({
+    type: "DEHYPE_PRICE_COMPARISON_RESULT",
+    source: "dom",
+    productName: state.productName,
+    searchKeyword: state.keyword,
+    products: selectedProducts,
+    ...summary,
+  });
+}
+
+function waitForSearchProducts(): Promise<ComparableProduct[]> {
+  const first = searchAdapter.extractProducts(document);
+  if (first.length > 0) return Promise.resolve(first);
+  return new Promise((resolve) => {
+    const timer = window.setTimeout(() => finish(searchAdapter.extractProducts(document)), 10_000);
+    const observer = new MutationObserver(() => {
+      const products = searchAdapter.extractProducts(document);
+      if (products.length > 0) finish(products);
+    });
+    const finish = (products: ComparableProduct[]): void => {
+      observer.disconnect();
+      if (timer !== undefined) window.clearTimeout(timer);
+      resolve(products);
+    };
+    observer.observe(document.documentElement, { childList: true, subtree: true });
+  });
+}
+
+function returnFromSearch(): void {
+  const rawState = sessionStorage.getItem(SEARCH_STATE_KEY);
+  sessionStorage.removeItem(SEARCH_STATE_KEY);
+  if (!rawState) return;
+  try {
+    const state = JSON.parse(rawState) as { originalUrl?: string };
+    if (typeof state.originalUrl === "string" && productAdapter.isSupportedPage(state.originalUrl)) {
+      window.location.assign(state.originalUrl);
+    }
+  } catch {
+    // Ignore malformed transient search state.
+  }
+}
+
+function isRateLimitError(error: unknown): boolean {
+  return error instanceof Error && /429|40002|rate-limited/i.test(error.message);
+}
+
+function extractComparableProducts(response: unknown) {
+  const goodsList = isRecord(response) && isRecord(response.result) &&
+    isRecord(response.result.data) && Array.isArray(response.result.data.goods_list)
+    ? response.result.data.goods_list
+    : [];
+  return goodsList.flatMap((goods): ComparableProduct[] => {
+    const product = parseComparableProduct(goods);
+    return product ? [product] : [];
+  });
+}
+
+function parseComparableProduct(goods: unknown): ComparableProduct | undefined {
+  if (!isRecord(goods) || !isRecord(goods.price_info)) return undefined;
+  const parsedPrice = parsePrice(goods.price_info.price_str);
+  const name = typeof goods.goods_name === "string" ? goods.goods_name.trim() : "";
+  if (!parsedPrice || !name) return undefined;
+  return {
+    ...parsedPrice,
+    name,
+    ...(typeof goods.goods_id === "string" ? { productId: goods.goods_id } : {}),
+    ...(typeof goods.goods_url === "string" ? { productUrl: goods.goods_url } : {}),
+  };
+}
+
+function isKeywordResponse(value: unknown): value is { searchKeyword: string } {
+  return isRecord(value) && value.type === "DEHYPE_GENERATE_SEARCH_KEYWORD_RESULT" &&
+    typeof value.searchKeyword === "string" && value.searchKeyword.length > 0;
+}
+
+function isErrorResponse(value: unknown): value is { message: string } {
+  return isRecord(value) && value.type === "DEHYPE_PRICE_COMPARISON_ERROR" &&
+    typeof value.message === "string";
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function tryExtract(sourceDocument: Document, pageUrl: string): ProductInfo | undefined {
@@ -405,6 +635,7 @@ if (
       handleContentMessage(message, sendResponse),
   );
   startNeedMatchAutomation();
+  void resumeDomSearch();
 }
 
 declare global {

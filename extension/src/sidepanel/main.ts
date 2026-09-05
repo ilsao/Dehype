@@ -16,6 +16,12 @@ import {
   type NeedMatchItem,
   type NeedMatchStatus,
 } from "../shared/needMatch.js";
+import {
+  createPriceBins,
+  isBinInBudget,
+  type PriceBin,
+} from "../shared/priceComparison.js";
+import type { PriceComparisonResult } from "../shared/productInfo.js";
 
 const form = requiredElement<HTMLFormElement>("#user-need-form");
 const fields = requiredElement<HTMLFieldSetElement>("#user-need-fields");
@@ -27,6 +33,7 @@ const excludeInput = requiredElement<HTMLTextAreaElement>("#exclude");
 const saveButton = requiredElement<HTMLButtonElement>("#save-button");
 const editButton = requiredElement<HTMLButtonElement>("#edit-button");
 const resetButton = requiredElement<HTMLButtonElement>("#reset-button");
+const comparePricesButton = document.querySelector<HTMLButtonElement>("#compare-prices-button");
 const modeLabel = requiredElement<HTMLElement>("#mode-label");
 const summarySection = requiredElement<HTMLElement>("#summary-section");
 const summaryState = requiredElement<HTMLElement>("#summary-state");
@@ -41,10 +48,27 @@ const needMatchStatus = requiredElement<HTMLElement>("#need-match-status");
 const needMatchProduct = requiredElement<HTMLElement>("#need-match-product");
 const needMatchExplanation = requiredElement<HTMLElement>("#need-match-explanation");
 const needMatchDetails = requiredElement<HTMLElement>("#need-match-details");
+const priceComparisonSection = document.querySelector<HTMLElement>("#price-comparison-section");
+const returnToNeedsButton = document.querySelector<HTMLButtonElement>("#return-to-needs");
+const priceStatus = document.querySelector<HTMLElement>("#price-status");
+const priceChart = document.querySelector<HTMLElement>("#price-chart");
+const priceBudgetLabel = document.querySelector<HTMLElement>("#price-budget-label");
 
 let hasSavedValue = false;
 let isEditing = true;
 let needMatchViewRevision = 0;
+
+returnToNeedsButton?.addEventListener("click", () => void returnToProductAndShowNeeds());
+comparePricesButton?.addEventListener("click", () => void requestPriceComparison());
+if (globalThis.chrome?.runtime?.onMessage) {
+  chrome.runtime.onMessage.addListener((message: unknown) => {
+    if (isPriceComparisonResult(message)) {
+      renderPriceComparison(message);
+    } else if (isPriceComparisonError(message)) {
+      if (priceStatus) priceStatus.textContent = message.message;
+    }
+  });
+}
 
 form.addEventListener("input", () => {
   if (!isEditing) {
@@ -345,6 +369,158 @@ function setBusy(busy: boolean): void {
   saveButton.disabled = busy || !isEditing;
   editButton.disabled = busy || isEditing || !hasSavedValue;
   resetButton.disabled = busy;
+  if (comparePricesButton) comparePricesButton.disabled = busy;
+}
+
+async function requestPriceComparison(): Promise<void> {
+  setBusy(true);
+  showPriceComparisonView();
+  if (priceStatus) priceStatus.textContent = "Comparing prices...";
+  try {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (typeof tab?.id !== "number") throw new Error("Open a Temu product page first.");
+    const response = await chrome.tabs.sendMessage(tab.id, {
+      type: "DEHYPE_PRICE_COMPARISON",
+    });
+    if (isPriceComparisonResult(response)) {
+      renderPriceComparison(response);
+    } else if (isPriceComparisonError(response)) {
+      if (priceStatus) priceStatus.textContent = response.message;
+    } else {
+      throw new Error("The price comparison returned an invalid response.");
+    }
+  } catch (error) {
+    if (priceStatus) priceStatus.textContent = errorMessage(error);
+  } finally {
+    setBusy(false);
+  }
+}
+
+function showPriceComparisonView(): void {
+  document.querySelector("#user-need-form")?.setAttribute("hidden", "true");
+  summarySection.hidden = true;
+  needMatchSection.hidden = true;
+  if (priceComparisonSection) priceComparisonSection.hidden = false;
+  modeLabel.textContent = "Prices";
+}
+
+function showUserNeedView(): void {
+  if (priceComparisonSection) priceComparisonSection.hidden = true;
+  document.querySelector("#user-need-form")?.removeAttribute("hidden");
+  summarySection.hidden = !hasSavedValue || isEditing;
+  needMatchSection.hidden = false;
+  modeLabel.textContent = isEditing ? "Editing" : "Saved";
+}
+
+async function returnToProductAndShowNeeds(): Promise<void> {
+  try {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (typeof tab?.id === "number") {
+      await chrome.tabs.sendMessage(tab.id, { type: "DEHYPE_RETURN_FROM_SEARCH" });
+    }
+  } finally {
+    showUserNeedView();
+  }
+}
+
+function renderPriceComparison(data: PriceComparisonResult): void {
+  showPriceComparisonView();
+  if (priceStatus) priceStatus.textContent = "";
+  requiredElement<HTMLElement>("#price-min").textContent = formatPrice(data.min, data.products[0]?.currency);
+  requiredElement<HTMLElement>("#price-median").textContent = formatPrice(data.median, data.products[0]?.currency);
+  requiredElement<HTMLElement>("#price-max").textContent = formatPrice(data.max, data.products[0]?.currency);
+  const currency = data.products[0]?.currency ?? "unknown currency";
+  const userNeed = readSavedNeedForChart();
+  const budgetText = budgetLabel(userNeed, currency);
+  if (priceBudgetLabel) priceBudgetLabel.textContent = budgetText;
+  const bins = createPriceBins(data.products.map(({ price }) => price));
+  if (priceChart) priceChart.replaceChildren(...createPriceBars(bins, currency, userNeed));
+}
+
+function parseBudgetValue(value: string): number | null {
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  const parsed = Number(trimmed);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function readSavedNeedForChart(): UserNeed {
+  return {
+    minBudget: parseBudgetValue(minBudgetInput.value),
+    maxBudget: parseBudgetValue(maxBudgetInput.value),
+    mustHave: [],
+    niceToHave: [],
+    exclude: [],
+  };
+}
+
+function budgetLabel(userNeed: UserNeed, currency: string): string {
+  if (userNeed.minBudget === null && userNeed.maxBudget === null) {
+    return "";
+  }
+  const minimum = userNeed.minBudget === null ? "no min" : formatPrice(userNeed.minBudget, currency);
+  const maximum = userNeed.maxBudget === null ? "no max" : formatPrice(userNeed.maxBudget, currency);
+  return `Budget: ${minimum} - ${maximum}`;
+}
+
+export function createPriceBars(
+  bins: PriceBin[],
+  currency: string,
+  userNeed?: Pick<UserNeed, "minBudget" | "maxBudget">,
+): HTMLElement[] {
+  const maximumCount = Math.max(...bins.map(({ count }) => count), 1);
+  const minBudget = userNeed?.minBudget ?? null;
+  const maxBudget = userNeed?.maxBudget ?? null;
+
+  return bins.map((bin) => {
+    const inBudget = isBinInBudget(bin, minBudget, maxBudget);
+
+    const group = document.createElement("div");
+    group.className = `price-bar-group${inBudget ? " in-budget" : ""}`;
+
+    const column = document.createElement("div");
+    column.className = `price-bar-column${inBudget ? " in-budget" : ""}`;
+    if (inBudget) {
+      column.setAttribute("title", "Within your budget range");
+      column.setAttribute("aria-label", "Within budget range");
+    }
+
+    const count = document.createElement("span");
+    count.className = "price-bar-count";
+    count.textContent = String(bin.count);
+
+    const bar = document.createElement("span");
+    bar.className = "price-bar";
+    bar.style.height = `${(bin.count / maximumCount) * 100}%`;
+
+    column.append(count, bar);
+
+    const label = document.createElement("span");
+    label.className = "price-bar-label";
+    label.textContent = `${formatPrice(bin.lower, currency)}-${formatPrice(bin.upper, currency)}`;
+
+    group.append(column, label);
+    return group;
+  });
+}
+
+function formatPrice(value: number, currency = ""): string {
+  return `${value.toFixed(2)} ${currency}`.trim();
+}
+
+function isPriceComparisonResult(value: unknown): value is PriceComparisonResult {
+  return isRecord(value) && value.type === "DEHYPE_PRICE_COMPARISON_RESULT" &&
+    (value.source === "api" || value.source === "dom") && Array.isArray(value.products) &&
+    typeof value.productName === "string" && typeof value.searchKeyword === "string" &&
+    typeof value.min === "number" && typeof value.max === "number" && typeof value.median === "number";
+}
+
+function isPriceComparisonError(value: unknown): value is { type: string; message: string } {
+  return isRecord(value) && value.type === "DEHYPE_PRICE_COMPARISON_ERROR" && typeof value.message === "string";
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function setStatus(message: string, state: "neutral" | "success" | "error"): void {

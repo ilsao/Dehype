@@ -24,6 +24,7 @@ const restoreButton = queryElement<HTMLButtonElement>("#restore-btn");
 const statusRow = queryElement<HTMLElement>("#status-row");
 const statusIndicator = queryElement<HTMLElement>("#status-indicator");
 const statusText = queryElement<HTMLElement>("#status-text");
+const compareButton = queryElement<HTMLButtonElement>("#compare-btn");
 
 let previousProvider = providerInput.value;
 
@@ -78,6 +79,21 @@ restoreButton.addEventListener("click", async () => {
       { type: "DEHYPE_RESTORE_CURRENT_PRODUCT" },
     );
     clearStatus();
+  } catch (error) {
+    setStatus(errorMessage(error), "error");
+  } finally {
+    setButtonsDisabled(false);
+  }
+});
+
+compareButton.addEventListener("click", async () => {
+  setButtonsDisabled(true);
+  clearStatus();
+  try {
+    const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (typeof activeTab?.windowId !== "number") throw new Error("Open a Temu product page and try again.");
+    await chrome.sidePanel.open({ windowId: activeTab.windowId });
+    window.close();
   } catch (error) {
     setStatus(errorMessage(error), "error");
   } finally {
@@ -167,6 +183,7 @@ function setButtonsDisabled(disabled: boolean): void {
   saveButton.disabled = disabled;
   neutralizeButton.disabled = disabled;
   restoreButton.disabled = disabled;
+  compareButton.disabled = disabled;
 }
 
 function setStatus(message: string, state: StatusState): void {
