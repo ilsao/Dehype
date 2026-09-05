@@ -4,11 +4,59 @@ import {
   loadAiSettings,
 } from "../shared/aiSettings.js";
 import { isNeutralizeProductValuesRequest } from "../shared/productInfo.ts";
+import {
+  appendDecisionEvent,
+  endDecisionSession,
+  loadDecisionSession,
+  resetDecisionSession,
+} from "./decisionReplayStorage.js";
+import { analyzeDecisionReplay } from "./decisionReplayAnalysis.js";
 
 if (typeof chrome !== "undefined" && chrome.runtime?.onMessage) {
   chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     if (message?.type === "getStatus") {
       void getAiSettingsStatus(chrome.storage.local).then(sendResponse);
+      return true;
+    }
+
+    if (message?.type === "DEHYPE_REPLAY_GET_SESSION") {
+      void loadDecisionSession().then((session) =>
+        sendResponse({ type: "DEHYPE_REPLAY_SESSION_RESULT", session }),
+      );
+      return true;
+    }
+
+    if (message?.type === "DEHYPE_REPLAY_APPEND_EVENT") {
+      void appendDecisionEvent(message.event).then((session) =>
+        sendResponse({ type: "DEHYPE_REPLAY_SESSION_RESULT", session }),
+      );
+      return true;
+    }
+
+    if (message?.type === "DEHYPE_REPLAY_END_SESSION") {
+      void endDecisionSession().then((session) =>
+        sendResponse({ type: "DEHYPE_REPLAY_SESSION_RESULT", session }),
+      );
+      return true;
+    }
+
+    if (message?.type === "DEHYPE_REPLAY_RESET_SESSION") {
+      void resetDecisionSession().then((session) =>
+        sendResponse({ type: "DEHYPE_REPLAY_SESSION_RESULT", session }),
+      );
+      return true;
+    }
+
+    if (message?.type === "DEHYPE_REPLAY_ANALYZE") {
+      void loadDecisionSession()
+        .then((session) => analyzeDecisionReplay(session))
+        .then((result) => sendResponse({ type: "DEHYPE_REPLAY_ANALYSIS_RESULT", result }))
+        .catch((error) =>
+          sendResponse({
+            type: "DEHYPE_REPLAY_ANALYSIS_RESULT",
+            result: { ok: false, message: error instanceof Error ? error.message : String(error) },
+          }),
+        );
       return true;
     }
 

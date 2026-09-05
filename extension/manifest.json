@@ -3,7 +3,7 @@
   "name": "Dehype",
   "version": "0.0.1",
   "description": "A Chrome extension that removes hype from web pages.",
-  "permissions": ["activeTab", "scripting", "storage"],
+  "permissions": ["activeTab", "scripting", "storage", "sidePanel"],
   "host_permissions": ["https://temu.com/*", "https://*.temu.com/*"],
   "optional_host_permissions": [
     "https://api.openai.com/*",
@@ -12,6 +12,9 @@
   ],
   "action": {
     "default_popup": "src/popup/popup.html"
+  },
+  "side_panel": {
+    "default_path": "src/sidepanel/decisionReplay.html"
   },
   "background": {
     "service_worker": "src/background/background.js",

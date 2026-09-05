@@ -10,8 +10,8 @@ const builtManifest = JSON.parse(
   await readFile(resolve(outputRoot, "manifest.json"), "utf8"),
 );
 
-const requiredPermissions = ["activeTab", "scripting", "storage"];
-const forbiddenPermissions = ["sidePanel"];
+const requiredPermissions = ["activeTab", "scripting", "storage", "sidePanel"];
+const forbiddenPermissions = [];
 const temuHosts = ["https://temu.com/*", "https://*.temu.com/*"];
 const providerHosts = [
   "https://api.openai.com/*",

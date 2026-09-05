@@ -18,8 +18,13 @@ import {
   mergeNeutralizedValuesIntoProductInfo,
   toValueOnlyProductInfo,
 } from "../shared/productInfo";
+import { DecisionReplayRecorder } from "./decisionReplayRecorder";
 
 const productAdapter = new TemuProductAdapter();
+const decisionReplayRecorder = new DecisionReplayRecorder({
+  document,
+  adapter: productAdapter,
+});
 const EXTRACTION_TIMEOUT_MS = 1_500;
 const EXTRACTION_DEBOUNCE_MS = 75;
 
@@ -249,6 +254,7 @@ function errorResponse(
 }
 
 if (typeof chrome !== "undefined" && chrome.runtime?.onMessage) {
+  decisionReplayRecorder.start();
   chrome.runtime.onMessage.addListener(
     (message: unknown, _sender, sendResponse): boolean =>
       handleContentMessage(message, sendResponse),
