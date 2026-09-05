@@ -456,7 +456,7 @@ describe("commerce stability with the real Temu adapter", () => {
     for (let index = 0; index < 20; index += 1) handle.neutralizeNewElements();
     expect(upper.isConnected).toBe(false);
     expect(button.querySelector("span")?.closest("[data-dehype-suppressed]")).toBeNull();
-    expect(button.textContent).toContain("Add to cart!");
+    expect(button.textContent).toContain("Add to cart");
     document.querySelector("#rightContent")!.prepend(upper);
     await new Promise((resolve) => setTimeout(resolve, 20));
     expect(updates).toBeLessThan(3);
@@ -509,7 +509,8 @@ describe("commerce stability with the real Temu adapter", () => {
     for (let index = 0; index < 5; index += 1) handle.neutralizeNewElements();
     button.click();
 
-    expect(button.getAttribute("data-dehype-deemphasized")).toBe("neutral-action");
+    expect(button.textContent).toBe("Add to cart");
+    expect(button.hasAttribute("data-dehype-deemphasized")).toBe(false);
     expect(button.hasAttribute("data-dehype-suppressed")).toBe(false);
     expect(document.querySelector("#promo-shell")?.hasAttribute("data-dehype-suppressed"))
       .toBe(false);
@@ -517,6 +518,7 @@ describe("commerce stability with the real Temu adapter", () => {
       .toBeNull();
     expect(clicked).toHaveBeenCalledTimes(1);
     handle.restore();
+    expect(button.textContent).toBe("-9% now! Add to cart!");
     expect(button.hasAttribute("data-dehype-deemphasized")).toBe(false);
   });
 });

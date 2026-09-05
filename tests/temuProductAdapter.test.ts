@@ -470,7 +470,11 @@ describe("TemuProductAdapter", () => {
     const targets = new TemuProductAdapter().findNeutralizationTargets(document);
     expect(
       targets.find(({ element }) => element.id === "only-cart"),
-    ).toMatchObject({ action: "deemphasize", presentation: "neutral-action" });
+    ).toMatchObject({
+      action: "rewrite-text",
+      presentation: "neutral-action",
+      replacementText: "Add to cart",
+    });
   });
 
   it("preserves a visible promotional cart control when the plain cart control is hidden", () => {
@@ -495,13 +499,36 @@ describe("TemuProductAdapter", () => {
     const target = (id: string) =>
       targets.find(({ element }) => element.id === id);
 
-    expect(target("visible-promotional-cart")).toMatchObject({
-      action: "deemphasize",
+    expect(target("promo-label")).toMatchObject({
+      action: "rewrite-text",
       reason: "promotion",
       presentation: "neutral-action",
+      replacementText: "Add to cart",
     });
     expect(target("promo-shell")).toBeUndefined();
-    expect(target("promo-label")).toBeUndefined();
+    expect(target("visible-promotional-cart")).toBeUndefined();
+  });
+
+  it("keeps localized cart copy when neutralizing a promotional cart control", () => {
+    const document = new DOMParser().parseFromString(
+      `
+        <div id="rightContent">
+          <button id="cart">-63% now! 加入購物車!</button>
+        </div>
+      `,
+      "text/html",
+    );
+    markAsVisible(document.querySelector<HTMLElement>("#cart")!);
+
+    const targets = new TemuProductAdapter().findNeutralizationTargets(document);
+
+    expect(
+      targets.find(({ element }) => element.id === "cart"),
+    ).toMatchObject({
+      action: "rewrite-text",
+      presentation: "neutral-action",
+      replacementText: "加入購物車",
+    });
   });
 
   it("suppresses unrelated promotion while preserving every Go to cart control", () => {

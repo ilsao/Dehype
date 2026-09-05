@@ -111,7 +111,7 @@ const PRIMARY_ACTION_TEXT =
   /^(?:add to cart|加入購物車|加入购物车|add to bag)$/i;
 const CART_DESTINATION_TEXT = /^(?:go to cart|前往購物車|前往购物车)$/i;
 const PROMOTIONAL_CART_TEXT =
-  /(?:^|\s)-?\d+(?:[.,]\d+)?%\s+now!?.*\badd to cart!?/i;
+  /(?:^|\s)-?\d+(?:[.,]\d+)?%\s+now!?.*(?:\badd to cart!?|加入購物車!?|加入购物车!?)/i;
 const STANDALONE_PROMOTION_HEADING = /^\s*big sale\s*$/i;
 const DELIVERY_TEXT =
   /^(?:free shipping for this item|arrives? in .+|ships? earliest .+|此商品免運|此商品免运|預計.+送達|预计.+送达)/i;
@@ -490,9 +490,16 @@ export class TemuProductAdapter implements ProductAdapter {
       if (fallback) retainedControls.push(fallback);
     }
     for (const control of retainedControls) {
-      targets.set(control, {
-        element: control, action: "deemphasize", reason: "promotion",
+      const replacementText = neutralCartText(textValue(control));
+      const targetElement = replacementText
+        ? promotionalCartTextElement(control)
+        : control;
+      targets.set(targetElement, {
+        element: targetElement,
+        action: replacementText ? "rewrite-text" : "deemphasize",
+        reason: "promotion",
         presentation: "neutral-action",
+        ...(replacementText ? { replacementText } : {}),
       });
     }
 
@@ -500,6 +507,7 @@ export class TemuProductAdapter implements ProductAdapter {
       ({ element, action }) =>
         !intersectsAny(element, protectedCartDestinations) &&
         (action === "deemphasize" ||
+          action === "rewrite-text" ||
           (!element.hasAttribute(DEHYPE_ELEMENT_ID) &&
             !element.querySelector(`[${DEHYPE_ELEMENT_ID}]`) &&
             !intersectsAny(element, retainedControls))),
@@ -613,6 +621,31 @@ function interactiveElementsWithText(
   return Array.from(
     document.querySelectorAll<HTMLElement>('button, [role="button"]'),
   ).filter((element) => pattern.test(textValue(element)));
+}
+
+function neutralCartText(value: string): string | undefined {
+  if (!PROMOTIONAL_CART_TEXT.test(value)) return undefined;
+  if (/加入購物車/.test(value)) return "加入購物車";
+  if (/加入购物车/.test(value)) return "加入购物车";
+  if (/\badd to bag\b/i.test(value)) return "Add to bag";
+  if (/\badd to cart\b/i.test(value)) return "Add to cart";
+  return undefined;
+}
+
+function promotionalCartTextElement(control: HTMLElement): HTMLElement {
+  const matchingDescendant = Array.from(
+    control.querySelectorAll<HTMLElement>("span, div, p, strong, em"),
+  ).find((element) => PROMOTIONAL_CART_TEXT.test(ownText(element)));
+  return matchingDescendant ?? control;
+}
+
+function ownText(element: HTMLElement): string {
+  return Array.from(element.childNodes)
+    .filter((node) => node.nodeType === Node.TEXT_NODE)
+    .map((node) => node.textContent ?? "")
+    .join(" ")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 function findRedundantPromotionalCartControls(
