@@ -57,8 +57,14 @@ function toNameFallback(document: Document, idFactory: IdFactory): Elem | undefi
   return value ? { id: idFactory(), value } : undefined;
 }
 
-function parsePriceValue(price: Elem): number {
-  return Number(price.value.replace(/^\$\s*/, "").replace(/,/g, ""));
+function parsePriceValue(price: Elem): number | undefined {
+  const numericPart = price.value.match(/\d+(?:,\d{3})*(?:\.\d+)?/);
+  if (!numericPart) {
+    return undefined;
+  }
+
+  const value = Number(numericPart[0].replace(/,/g, ""));
+  return Number.isFinite(value) ? value : undefined;
 }
 
 export class TemuProductAdapter implements ProductAdapter {
@@ -91,7 +97,7 @@ export class TemuProductAdapter implements ProductAdapter {
 
   private getPriceElements(document: Document): Elem[] {
     return Array.from(document.querySelectorAll("._14At0Pe5"))
-      .filter((element) => /\$\s*\d+(\.\d+)?/.test(readElementValue(element)))
+      .filter((element) => /\$\s*\d/.test(readElementValue(element)))
       .slice(0, 2)
       .map((element) => toElem(element, this.idFactory))
       .filter((element): element is Elem => element !== undefined);
@@ -124,7 +130,12 @@ export class TemuProductAdapter implements ProductAdapter {
     } else if (priceElements.length >= 2) {
       const [firstPrice, secondPrice] = priceElements;
       if (firstPrice && secondPrice) {
-        if (parsePriceValue(firstPrice) >= parsePriceValue(secondPrice)) {
+        const firstValue = parsePriceValue(firstPrice);
+        const secondValue = parsePriceValue(secondPrice);
+
+        if (firstValue === undefined || secondValue === undefined) {
+          currentPriceElement = firstPrice;
+        } else if (firstValue >= secondValue) {
           originalPriceElement = firstPrice;
           currentPriceElement = secondPrice;
         } else {

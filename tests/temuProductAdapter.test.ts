@@ -65,6 +65,24 @@ describe("TemuProductAdapter", () => {
     });
   });
 
+  it("compares only the numeric part of currency-formatted decimal prices", () => {
+    const document = new DOMParser().parseFromString(
+      `
+        <div class="_25g_jM0z">Ceramic mug</div>
+        <div class="_14At0Pe5">NT$ 4.58</div>
+        <div class="_14At0Pe5">NT$ 1,007.40</div>
+      `,
+      "text/html",
+    );
+    const adapter = createAdapter();
+
+    expect(adapter.extractProductInfo(document, productUrl)).toEqual({
+      name: { id: "test-id-1", value: "Ceramic mug" },
+      originalPrice: { id: "test-id-3", value: "NT$ 1,007.40" },
+      currentPrice: { id: "test-id-2", value: "NT$ 4.58" },
+    });
+  });
+
   it("assigns a single price as currentPrice", () => {
     const document = new DOMParser().parseFromString(
       `
