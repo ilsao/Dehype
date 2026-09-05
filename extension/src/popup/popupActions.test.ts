@@ -15,9 +15,9 @@ describe("popup actions", () => {
       sendMessage: vi.fn(async () => ({ ok: true })),
     };
 
-    await expect(sendMessageToActiveTab(tabsApi, { type })).resolves.toEqual({
-      ok: true,
-    });
+    await expect(
+      sendMessageToActiveTab<{ ok: boolean }>(tabsApi, { type }),
+    ).resolves.toEqual({ ok: true });
     expect(tabsApi.sendMessage).toHaveBeenCalledWith(42, { type });
   });
 
@@ -28,7 +28,9 @@ describe("popup actions", () => {
     };
 
     await expect(
-      sendMessageToActiveTab(tabsApi, { type: "DEHYPE_REBUILD_CURRENT_PRODUCT" }),
+      sendMessageToActiveTab<{ ok: boolean }>(tabsApi, {
+        type: "DEHYPE_REBUILD_CURRENT_PRODUCT",
+      }),
     ).rejects.toThrow("Open a product page and try again.");
   });
 

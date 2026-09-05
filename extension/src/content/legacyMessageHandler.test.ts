@@ -1,25 +1,29 @@
 import { beforeEach, describe, expect, test, vi } from 'vitest';
-import './index.js';
+import type { Mock } from 'vitest';
+import './legacyMessageHandler.js';
 
 const handleMessage = globalThis.__dehypeHandleMessage;
 
-describe('index.js - Message Handler Unit Tests', () => {
-    let mockReplacer;
+describe('legacyMessageHandler.ts - Message Handler Unit Tests', () => {
+    let mockReplacer: {
+        replace: Mock<(productInfo?: unknown) => void>;
+        restore: Mock<() => void>;
+    };
 
     beforeEach(() => {
         // 模擬 window.dehypeReplacer 模組
         mockReplacer = {
-            replace: vi.fn(),
-            restore: vi.fn()
+            replace: vi.fn<(productInfo?: unknown) => void>(),
+            restore: vi.fn<() => void>()
         };
-        globalThis.window = { dehypeReplacer: mockReplacer };
+        window.dehypeReplacer = mockReplacer;
     });
 
     test('收到 REPLACE_TEXT 時，應正確呼叫 window.dehypeReplacer.replace 並傳入 ProductInfo', () => {
         const mockSendResponse = vi.fn();
         const mockProductInfo = {
             name: { id: 'test-id-1', value: '測試名稱' },
-            originPrice: { id: 'test-id-2', value: 'NT$ 100' }
+            originalPrice: { id: 'test-id-2', value: 'NT$ 100' }
         };
 
         const result = handleMessage(

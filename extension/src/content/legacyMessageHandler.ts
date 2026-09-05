@@ -1,12 +1,26 @@
-// extension/src/content/index.js
+import type { DehypeReplacer } from './neutralizer.js';
 
 console.log('[Dehype] Content Script 模組已就位');
+
+interface LegacyMessage {
+    type?: unknown;
+    payload?: unknown;
+}
+
+interface LegacyResponse {
+    status: 'success';
+    message: string;
+}
 
 /**
  * 訊息處理核心邏輯 (抽離以利 Unit Test 呼叫)
  */
-function handleMessage(message, sender, sendResponse) {
-    const { type, payload } = message;
+function handleMessage(
+    message: unknown,
+    _sender: chrome.runtime.MessageSender,
+    sendResponse?: (response: LegacyResponse) => void,
+): boolean {
+    const { type, payload } = message as LegacyMessage;
 
     if (type === 'REPLACE_TEXT') {
         if (window.dehypeReplacer) {
@@ -33,6 +47,14 @@ globalThis.__dehypeHandleMessage = handleMessage;
 // 瀏覽器環境：掛載 Chrome 訊息監聽器
 if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.onMessage) {
     chrome.runtime.onMessage.addListener(handleMessage);
+}
+
+declare global {
+    interface Window {
+        dehypeReplacer?: DehypeReplacer;
+    }
+
+    var __dehypeHandleMessage: typeof handleMessage;
 }
 
 // ===================================================

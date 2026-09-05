@@ -1,4 +1,6 @@
-export function neutralizeValuesLocally(productValues) {
+import type { ProductInfoValueOnly } from "../shared/productInfo.js";
+
+export function neutralizeValuesLocally(productValues: ProductInfoValueOnly) {
   return {
     name: neutralizeMarketingText(productValues.name),
     originalPrice: neutralizeMarketingText(productValues.originalPrice),
@@ -10,7 +12,7 @@ export function neutralizeValuesLocally(productValues) {
   };
 }
 
-function neutralizeMarketingText(value) {
+function neutralizeMarketingText(value: string | undefined) {
   if (!value) {
     return value;
   }
@@ -23,7 +25,7 @@ function neutralizeMarketingText(value) {
     .trim();
 }
 
-function neutralizeDiscountText(value) {
+function neutralizeDiscountText(value: string | undefined) {
   if (!value) {
     return value;
   }
@@ -37,7 +39,7 @@ function neutralizeDiscountText(value) {
   return neutralizeMarketingText(value);
 }
 
-function neutralizeScarcityText(value) {
+function neutralizeScarcityText(value: string | undefined) {
   if (!value) {
     return value;
   }

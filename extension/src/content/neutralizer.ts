@@ -1,20 +1,31 @@
-// extension/src/content/neutralizer.js
+interface ReplacementHistory {
+    element: Element;
+    originalText: string | null;
+}
 
-class DOMReplacer {
-    constructor() {
-        this.history = new Map();
-    }
+interface ReplacementTarget {
+    id: unknown;
+    content: unknown;
+}
+
+export interface DehypeReplacer {
+    replace(productInfo?: unknown): void;
+    restore(): void;
+}
+
+export class DOMReplacer implements DehypeReplacer {
+    private readonly history = new Map<unknown, ReplacementHistory>();
 
     /**
      * 核心替換方法 (支援 ProductInfo 內包含 multiple ProductElement { id, value } 物件)
      * @param {Object} productInfo - 包含 name, originalPrice, currentPrice 等 ProductElement 結構的物件
      */
-    replace(productInfo = {}) {
+    replace(productInfo: unknown = {}) {
         // 解析 ProductInfo 物件內所有符合 ProductElement { id, value } 結構的欄位
-        const targets = [];
+        const targets: ReplacementTarget[] = [];
 
-        Object.values(productInfo).forEach((item) => {
-            if (item && typeof item === 'object' && item.id && item.value !== undefined) {
+        Object.values(productInfo as object).forEach((item) => {
+            if (isRecord(item) && item.id && item.value !== undefined) {
                 targets.push({ id: item.id, content: item.value });
             }
         });
@@ -36,7 +47,7 @@ class DOMReplacer {
             }
 
             // 純文字覆寫
-            element.textContent = content;
+            element.textContent = content as string | null;
             element.setAttribute('data-dehype-status', 'replaced');
         });
     }
@@ -44,10 +55,10 @@ class DOMReplacer {
     /**
      * 定位 DOM 節點
      */
-    findElement(id) {
+    findElement(id: unknown): Element | null {
         return (
             document.querySelector(`[data-dehype-id="${id}"]`) ||
-            document.getElementById(id)
+            document.getElementById(id as string)
         );
     }
 
@@ -67,4 +78,14 @@ class DOMReplacer {
 
 if (typeof window !== 'undefined') {
     window.dehypeReplacer = new DOMReplacer();
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null;
+}
+
+declare global {
+    interface Window {
+        dehypeReplacer?: DehypeReplacer;
+    }
 }

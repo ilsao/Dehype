@@ -11,7 +11,7 @@ import {
 
 describe("AI settings", () => {
   it("saves and reloads the provider, model, and API key", async () => {
-    const values = {};
+    const values: Record<string, unknown> = {};
     const storage = {
       get: vi.fn(async () => values),
       set: vi.fn(async (nextValues) => Object.assign(values, nextValues)),

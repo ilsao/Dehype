@@ -1,16 +1,15 @@
-/* global fetch */
+import {
+  PRODUCT_INFO_FIELDS,
+  type NeutralizedProductValues,
+  type ProductInfoField,
+  type ProductInfoValueOnly,
+} from "../shared/productInfo.js";
+import {
+  validateAiSettings,
+  type AiSettings,
+} from "../shared/aiSettings.js";
 
-import { validateAiSettings } from "../shared/aiSettings.js";
-
-const PRODUCT_FIELDS = new Set([
-  "name",
-  "originalPrice",
-  "currentPrice",
-  "discount",
-  "image",
-  "description",
-  "stockAmount",
-]);
+const PRODUCT_FIELDS: ReadonlySet<string> = new Set(PRODUCT_INFO_FIELDS);
 
 const SYSTEM_PROMPT = [
   "You are Dehype, a shopping assistant that removes persuasive wording.",
@@ -19,16 +18,48 @@ const SYSTEM_PROMPT = [
   "Return only one JSON object with the same field names and string values.",
 ].join(" ");
 
+type JsonObject = Record<string, unknown>;
+
+interface ProviderTextPart {
+  text?: string;
+}
+
+interface ProviderData {
+  output_text?: string;
+  output?: Array<{ content?: ProviderTextPart[] }>;
+  candidates?: Array<{ content?: { parts?: ProviderTextPart[] } }>;
+  content?: ProviderTextPart[];
+  error?: { message?: string };
+  message?: string;
+}
+
+interface ProviderResponse {
+  ok: boolean;
+  statusText?: string;
+  json(): Promise<unknown>;
+}
+
+export type ProviderFetch = (
+  input: string,
+  init: RequestInit,
+) => Promise<ProviderResponse>;
+
+interface NeutralizeProductValuesOptions {
+  settings: unknown;
+  productValues: unknown;
+  fetchImpl?: ProviderFetch;
+}
+
 export async function neutralizeProductValues({
   settings: rawSettings,
   productValues,
   fetchImpl = fetch,
-}) {
+}: NeutralizeProductValuesOptions): Promise<NeutralizedProductValues> {
   const settings = validateAiSettings(rawSettings);
   const values = validateProductValues(productValues);
   const prompt = `${SYSTEM_PROMPT}\n\n${JSON.stringify(values, null, 2)}`;
 
-  let responseText;
+  let responseText: string;
 
   if (settings.provider === "openai") {
     responseText = await callOpenAi(settings, prompt, fetchImpl);
@@ -41,14 +72,17 @@ export async function neutralizeProductValues({
   return parseNeutralizedValues(responseText, values);
 }
 
-export function parseNeutralizedValues(responseText, originalValues) {
+export function parseNeutralizedValues(
+  responseText: unknown,
+  originalValues: ProductInfoValueOnly,
+): NeutralizedProductValues {
   if (typeof responseText !== "string" || !responseText.trim()) {
     throw new Error("The AI provider returned an empty response.");
   }
 
   const trimmed = responseText.trim();
   const fencedMatch = trimmed.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);
-  let parsed;
+  let parsed: unknown;
 
   try {
     parsed = JSON.parse(fencedMatch?.[1] ?? trimmed);
@@ -56,11 +90,11 @@ export function parseNeutralizedValues(responseText, originalValues) {
     throw new Error("The AI provider returned invalid JSON.");
   }
 
-  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+  if (!isJsonObject(parsed)) {
     throw new Error("The AI provider response must be a JSON object.");
   }
 
-  const neutralizedValues = {};
+  const neutralizedValues: NeutralizedProductValues = {};
 
   for (const [field, value] of Object.entries(parsed)) {
     if (
@@ -68,7 +102,7 @@ export function parseNeutralizedValues(responseText, originalValues) {
       field in originalValues &&
       typeof value === "string"
     ) {
-      neutralizedValues[field] = value;
+      neutralizedValues[field as ProductInfoField] = value;
     }
   }
 
@@ -79,16 +113,16 @@ export function parseNeutralizedValues(responseText, originalValues) {
   return neutralizedValues;
 }
 
-function validateProductValues(value) {
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
+function validateProductValues(value: unknown): ProductInfoValueOnly {
+  if (!isJsonObject(value)) {
     throw new Error("No product information was provided for analysis.");
   }
 
-  const productValues = {};
+  const productValues: ProductInfoValueOnly = {};
 
   for (const [field, fieldValue] of Object.entries(value)) {
     if (PRODUCT_FIELDS.has(field) && typeof fieldValue === "string") {
-      productValues[field] = fieldValue;
+      productValues[field as ProductInfoField] = fieldValue;
     }
   }
 
@@ -99,7 +133,11 @@ function validateProductValues(value) {
   return productValues;
 }
 
-async function callOpenAi(settings, prompt, fetchImpl) {
+async function callOpenAi(
+  settings: AiSettings,
+  prompt: string,
+  fetchImpl: ProviderFetch,
+): Promise<string> {
   const response = await fetchImpl("https://api.openai.com/v1/responses", {
     method: "POST",
     headers: {
@@ -124,7 +162,11 @@ async function callOpenAi(settings, prompt, fetchImpl) {
   );
 }
 
-async function callGemini(settings, prompt, fetchImpl) {
+async function callGemini(
+  settings: AiSettings,
+  prompt: string,
+  fetchImpl: ProviderFetch,
+): Promise<string> {
   const modelPath = settings.model.startsWith("models/")
     ? settings.model
     : `models/${settings.model}`;
@@ -152,7 +194,11 @@ async function callGemini(settings, prompt, fetchImpl) {
   );
 }
 
-async function callClaude(settings, prompt, fetchImpl) {
+async function callClaude(
+  settings: AiSettings,
+  prompt: string,
+  fetchImpl: ProviderFetch,
+): Promise<string> {
   const response = await fetchImpl("https://api.anthropic.com/v1/messages", {
     method: "POST",
     headers: {
@@ -178,19 +224,24 @@ async function callClaude(settings, prompt, fetchImpl) {
   );
 }
 
-async function readProviderResponse(response) {
-  const data = await response.json().catch(() => null);
+async function readProviderResponse(
+  response: ProviderResponse,
+): Promise<ProviderData> {
+  const data = (await response.json().catch(() => null)) as ProviderData | null;
 
   if (!response.ok) {
     const message =
-      data?.error?.message ?? data?.message ?? response.statusText ?? "Unknown error";
+      data?.error?.message ??
+      data?.message ??
+      response.statusText ??
+      "Unknown error";
     throw new Error(`Provider request failed: ${addProviderHint(message)}`);
   }
 
   return data ?? {};
 }
 
-function addProviderHint(message) {
+function addProviderHint(message: string): string {
   if (/not found|not supported for generateContent/i.test(message)) {
     return `${message} Choose a model available to this API key.`;
   }
@@ -200,4 +251,8 @@ function addProviderHint(message) {
   }
 
   return message;
+}
+
+function isJsonObject(value: unknown): value is JsonObject {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

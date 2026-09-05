@@ -8,18 +8,30 @@ import {
   sendMessageToActiveTab,
 } from "./popupActions.js";
 
-const closeButton = document.querySelector("#close-btn");
-const settingsForm = document.querySelector("#settings-form");
-const providerInput = document.querySelector("#provider");
-const modelInput = document.querySelector("#model");
-const apiKeyInput = document.querySelector("#api-key");
-const saveButton = document.querySelector("#save-btn");
-const neutralizeButton = document.querySelector("#neutralize-btn");
-const restoreButton = document.querySelector("#restore-btn");
-const modelResult = document.querySelector("#model-result");
-const modelOutput = document.querySelector("#model-output");
-const statusIndicator = document.querySelector("#status-indicator");
-const statusText = document.querySelector("#status-text");
+interface PopupActionResponse {
+  ok: boolean;
+  error?: string;
+  productInfo?: unknown;
+}
+
+type StatusState = "neutral" | "success" | "error";
+
+const closeButton = document.querySelector<HTMLButtonElement>("#close-btn")!;
+const settingsForm = document.querySelector<HTMLFormElement>("#settings-form")!;
+const providerInput = document.querySelector<HTMLSelectElement>("#provider")!;
+const modelInput = document.querySelector<HTMLInputElement>("#model")!;
+const apiKeyInput = document.querySelector<HTMLInputElement>("#api-key")!;
+const saveButton = document.querySelector<HTMLButtonElement>("#save-btn")!;
+const neutralizeButton = document.querySelector<HTMLButtonElement>(
+  "#neutralize-btn",
+)!;
+const restoreButton = document.querySelector<HTMLButtonElement>("#restore-btn")!;
+const modelResult = document.querySelector<HTMLElement>("#model-result")!;
+const modelOutput = document.querySelector<HTMLElement>("#model-output")!;
+const statusIndicator = document.querySelector<HTMLElement>(
+  "#status-indicator",
+)!;
+const statusText = document.querySelector<HTMLElement>("#status-text")!;
 
 let previousProvider = providerInput.value;
 
@@ -55,9 +67,10 @@ neutralizeButton.addEventListener("click", async () => {
 
   try {
     await saveCurrentSettings();
-    const response = await sendMessageToActiveTab(chrome.tabs, {
-      type: "DEHYPE_REBUILD_CURRENT_PRODUCT",
-    });
+    const response = await sendMessageToActiveTab<PopupActionResponse>(
+      chrome.tabs,
+      { type: "DEHYPE_REBUILD_CURRENT_PRODUCT" },
+    );
 
     if (!response.ok) {
       throw new Error(response.error ?? "The product could not be analyzed.");
@@ -83,9 +96,10 @@ restoreButton.addEventListener("click", async () => {
   setStatus("Restoring the original text...", "neutral");
 
   try {
-    const response = await sendMessageToActiveTab(chrome.tabs, {
-      type: "DEHYPE_RESTORE_CURRENT_PRODUCT",
-    });
+    const response = await sendMessageToActiveTab<PopupActionResponse>(
+      chrome.tabs,
+      { type: "DEHYPE_RESTORE_CURRENT_PRODUCT" },
+    );
 
     if (!response.ok) {
       throw new Error(response.error ?? "The page could not be restored.");
@@ -134,17 +148,17 @@ async function saveCurrentSettings() {
   });
 }
 
-function setButtonsDisabled(disabled) {
+function setButtonsDisabled(disabled: boolean): void {
   saveButton.disabled = disabled;
   neutralizeButton.disabled = disabled;
   restoreButton.disabled = disabled;
 }
 
-function setStatus(message, state) {
+function setStatus(message: string, state: StatusState): void {
   statusText.textContent = message;
   statusIndicator.className = `status-${state}`;
 }
 
-function errorMessage(error) {
+function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
