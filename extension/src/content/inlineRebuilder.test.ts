@@ -27,21 +27,33 @@ describe("inline page rebuilder", () => {
       { name: { id: "name-id", value: "Mug" } },
       {
         source: "local",
-        findSuppressibleElements: () => [
-          document.querySelector<HTMLElement>("#promo")!,
-        ],
+        findNeutralizationTargets: () => [{
+          element: document.querySelector<HTMLElement>("#promo")!,
+          action: "suppress",
+          reason: "promotion",
+          presentation: "hidden-container",
+        }],
         onRestore: vi.fn(),
       },
     );
 
     expect(handle.appliedFields).toEqual(["name"]);
     expect(handle.suppressedElementCount).toBe(1);
+    expect(handle.deemphasizedElementCount).toBe(0);
     expect(source?.textContent).toBe("Hot sale Mug!");
     expect(child?.isConnected).toBe(true);
-    expect(document.querySelector('[data-dehype-replacement="name"]')?.textContent)
-      .toBe("Mug");
+    const replacement = document.querySelector<HTMLElement>(
+      '[data-dehype-replacement="name"]',
+    );
+    expect(replacement?.textContent).toBe("Mug");
+    expect(replacement?.tagName).toBe("H1");
+    const pageStyle = document.querySelector("#dehype-inline-rebuild-style")
+      ?.textContent;
+    expect(pageStyle).toContain("border-radius: 0 !important");
+    expect(pageStyle).toContain("background: transparent !important");
+    expect(pageStyle).toContain("padding: 0 !important");
     expect(document.querySelector("#promo")?.getAttribute("data-dehype-suppressed"))
-      .toBe("true");
+      .toBe("hidden-container");
 
     handle.restore();
     expect(child?.isConnected).toBe(true);
@@ -58,7 +70,7 @@ describe("inline page rebuilder", () => {
       { name: { id: "metadata-name", value: "Mug" } },
       {
         source: "model",
-        findSuppressibleElements: () => [],
+        findNeutralizationTargets: () => [],
         onRestore: vi.fn(),
       },
     );
@@ -78,9 +90,12 @@ describe("inline page rebuilder", () => {
       { name: { id: "name-id", value: "Neutral mug" } },
       {
         source: "local",
-        findSuppressibleElements: () => [
-          document.querySelector<HTMLElement>("#promo")!,
-        ],
+        findNeutralizationTargets: () => [{
+          element: document.querySelector<HTMLElement>("#promo")!,
+          action: "suppress",
+          reason: "promotion",
+          presentation: "hidden-container",
+        }],
         onRestore: vi.fn(),
       },
     );
@@ -101,7 +116,12 @@ describe("inline page rebuilder", () => {
       { name: { id: "name-id", value: "Neutral mug" } },
       {
         source: "local",
-        findSuppressibleElements: () => candidates,
+        findNeutralizationTargets: () => candidates.map((element) => ({
+          element,
+          action: "suppress" as const,
+          reason: "promotion" as const,
+          presentation: "hidden-container" as const,
+        })),
         onRestore: vi.fn(),
       },
     );
@@ -110,7 +130,7 @@ describe("inline page rebuilder", () => {
     document.body.append(latePromo);
     candidates.push(latePromo);
 
-    expect(handle.suppressNewElements()).toBe(1);
+    expect(handle.neutralizeNewElements()).toBe(1);
     expect(handle.suppressedElementCount).toBe(1);
     handle.restore();
     expect(latePromo.hasAttribute("data-dehype-suppressed")).toBe(false);
@@ -122,7 +142,7 @@ describe("inline page rebuilder", () => {
     const handle = applyInlineRebuild(
       document,
       { name: { id: "name-id", value: "Neutral mug" } },
-      { source: "local", findSuppressibleElements: () => [], onRestore },
+      { source: "local", findNeutralizationTargets: () => [], onRestore },
     );
     const host = document.querySelector<HTMLElement>("#dehype-inline-rebuild-control");
     const button = host?.shadowRoot?.querySelector<HTMLButtonElement>("button");
@@ -131,5 +151,89 @@ describe("inline page rebuilder", () => {
     expect(button?.type).toBe("button");
     expect(onRestore).toHaveBeenCalledOnce();
     handle.restore();
+  });
+
+  it("renders original and current prices once without strikethrough", () => {
+    document.body.innerHTML = `
+      <div id="goods_price">
+        <div id="original" ${DEHYPE_ELEMENT_ID}="original-id"><s>CA$9.04</s></div>
+        <div id="current" ${DEHYPE_ELEMENT_ID}="current-id"><span>Est.</span><span>CA$</span><span>4.64</span></div>
+        <div id="discount" ${DEHYPE_ELEMENT_ID}="discount-id">48% OFF</div>
+      </div>
+    `;
+    const handle = applyInlineRebuild(
+      document,
+      {
+        name: { id: "metadata-only", value: "Pliers" },
+        originalPrice: { id: "original-id", value: "CA$9.04" },
+        currentPrice: { id: "current-id", value: "Estimated CA$4.64" },
+        discount: { id: "discount-id", value: "48% OFF" },
+      },
+      { source: "local", findNeutralizationTargets: () => [], onRestore: vi.fn() },
+    );
+
+    const summary = document.querySelector<HTMLElement>(
+      "[data-dehype-price-summary]",
+    );
+    expect(summary?.textContent).toBe(
+      "Original price:CA$9.04Current estimated price:CA$4.64",
+    );
+    expect(summary?.querySelectorAll("[data-dehype-price-line]")).toHaveLength(2);
+    expect(summary?.querySelector("del, s")).toBeNull();
+    expect(document.querySelector("#original s")?.isConnected).toBe(true);
+    expect(document.querySelector("#discount")?.getAttribute("data-dehype-original-hidden"))
+      .toBe("true");
+    expect(handle.appliedFields).toEqual(["originalPrice", "currentPrice"]);
+
+    handle.restore();
+    expect(document.querySelector("[data-dehype-price-summary]")).toBeNull();
+    expect(document.querySelector("#original")?.hasAttribute("data-dehype-original-hidden"))
+      .toBe(false);
+    expect(document.querySelector("#current")?.hasAttribute("data-dehype-original-hidden"))
+      .toBe(false);
+    expect(document.querySelector("#discount")?.hasAttribute("data-dehype-original-hidden"))
+      .toBe(false);
+  });
+
+  it("removes the purchase-card frame without adding a gray action background", () => {
+    document.body.innerHTML = `
+      <section id="card"><button id="cart">Add to cart</button></section>
+    `;
+    const card = document.querySelector<HTMLElement>("#card")!;
+    const cart = document.querySelector<HTMLElement>("#cart")!;
+    const handle = applyInlineRebuild(
+      document,
+      { name: { id: "metadata-only", value: "Pliers" } },
+      {
+        source: "local",
+        findNeutralizationTargets: () => [
+          {
+            element: card,
+            action: "deemphasize",
+            reason: "promotion",
+            presentation: "neutral-surface",
+          },
+          {
+            element: cart,
+            action: "deemphasize",
+            reason: "promotion",
+            presentation: "neutral-action",
+          },
+        ],
+        onRestore: vi.fn(),
+      },
+    );
+
+    const pageStyle = document.querySelector("#dehype-inline-rebuild-style")
+      ?.textContent;
+    expect(card.getAttribute("data-dehype-deemphasized")).toBe("neutral-surface");
+    expect(cart.getAttribute("data-dehype-deemphasized")).toBe("neutral-action");
+    expect(pageStyle).toContain('data-dehype-deemphasized="neutral-surface"] {\n      border: 0 !important');
+    expect(pageStyle).toContain('data-dehype-deemphasized="neutral-action"] {');
+    expect(pageStyle).not.toContain("background-color: #e2e8f0");
+
+    handle.restore();
+    expect(card.hasAttribute("data-dehype-deemphasized")).toBe(false);
+    expect(cart.hasAttribute("data-dehype-deemphasized")).toBe(false);
   });
 });

@@ -58,6 +58,43 @@ describe("background neutralization coordinator", () => {
     });
   });
 
+  it("does not let model output alter local price or image facts", async () => {
+    const factualValues = {
+      ...productValues,
+      originalPrice: "CA$9.04",
+      currentPrice: "Estimated CA$4.64",
+      image: "https://example.test/pliers.png",
+    };
+    const fetchImpl = vi.fn(async () => ({
+      ok: true,
+      json: async () => ({
+        output_text: JSON.stringify({
+          name: "Pliers",
+          originalPrice: "CA$99.99",
+          currentPrice: "CA$0.01",
+          image: "https://evil.invalid/replacement.png",
+        }),
+      }),
+    }));
+    const result = await neutralizeWithSavedSettings(factualValues, {
+      storage: storage({
+        version: 1,
+        mode: "remote",
+        provider: "openai",
+        model: "gpt-test",
+        apiKey: "key",
+        consentVersion: AI_REMOTE_CONSENT_VERSION,
+      }),
+      fetchImpl,
+    });
+
+    expect(result.productValues).toMatchObject({
+      originalPrice: "CA$9.04",
+      currentPrice: "Estimated CA$4.64",
+      image: "https://example.test/pliers.png",
+    });
+  });
+
   it("falls back to local rules when a model response is malformed", async () => {
     const fetchImpl = vi.fn(async () => ({
       ok: true,

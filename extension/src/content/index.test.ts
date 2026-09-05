@@ -15,6 +15,7 @@ beforeEach(() => {
       <h1 class="_25g_jM0z">HOT SALE Wireless Earbuds!</h1>
       <div data-testid="current-price"><span id="price-child">$12.99 today only</span></div>
       <button id="variant">Blue</button>
+      <button id="add-to-cart">Add to cart</button>
       <div data-testid="countdown-banner">Flash sale 01:15:30</div>
       <img data-main-image src="https://example.test/product.png" alt="Product">
     </main>
@@ -55,17 +56,20 @@ describe("content-script integration", () => {
     expect(first).toMatchObject({
       appliedFields: ["name", "currentPrice"],
       suppressedElementCount: 1,
+      deemphasizedElementCount: 1,
     });
     expect(name?.textContent).toBe("HOT SALE Wireless Earbuds!");
     expect(price?.textContent).toBe("$12.99 today only");
     expect(name?.getAttribute("data-dehype-original-hidden")).toBe("true");
     expect(document.querySelector('[data-dehype-replacement="name"]')?.textContent)
       .toBe("Wireless Earbuds");
-    expect(document.querySelector('[data-dehype-replacement="currentPrice"]')?.textContent)
-      .toBe("$12.99");
+    expect(document.querySelector('[data-dehype-price-line="current"]')?.textContent)
+      .toBe("Current price:$12.99");
     expect(document.querySelector("#price-child")?.isConnected).toBe(true);
     expect(document.querySelector('[data-testid="countdown-banner"]')
-      ?.getAttribute("data-dehype-suppressed")).toBe("true");
+      ?.getAttribute("data-dehype-suppressed")).toBe("hidden-container");
+    expect(document.querySelector("#add-to-cart")
+      ?.getAttribute("data-dehype-deemphasized")).toBe("neutral-action");
     expect(document.querySelector("#dehype-inline-rebuild-control")?.shadowRoot)
       .not.toBeNull();
     expect(variant?.textContent).toBe("Blue");
@@ -79,6 +83,7 @@ describe("content-script integration", () => {
     expect(name?.hasAttribute("data-dehype-original-hidden")).toBe(false);
     expect(document.querySelector("[data-dehype-replacement]")).toBeNull();
     expect(document.querySelector("[data-dehype-suppressed]")).toBeNull();
+    expect(document.querySelector("[data-dehype-deemphasized]")).toBeNull();
     expect(document.querySelector("#dehype-inline-rebuild-control")).toBeNull();
   });
 

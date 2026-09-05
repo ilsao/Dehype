@@ -53,10 +53,21 @@ export async function neutralizeWithSavedSettings(productValues, dependencies = 
     // A model may omit fields or retain subtle urgency. Keep deterministic
     // coverage as the baseline, overlay usable model output, then apply the
     // local rules once more so remote mode cannot weaken core neutralization.
-    const productValuesWithDeterministicCoverage = neutralizeValuesLocally({
+    const modelOverlay = {
       ...localValues,
       ...modelValues,
-    });
+    };
+    // Prices and images are canonical local facts. The model may rewrite only
+    // language fields and must never alter these values or introduce them.
+    for (const field of ["originalPrice", "currentPrice", "image"]) {
+      if (Object.hasOwn(localValues, field)) {
+        modelOverlay[field] = localValues[field];
+      } else {
+        delete modelOverlay[field];
+      }
+    }
+    const productValuesWithDeterministicCoverage =
+      neutralizeValuesLocally(modelOverlay);
     return {
       productValues: productValuesWithDeterministicCoverage,
       source: "model",

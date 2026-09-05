@@ -18,6 +18,7 @@ describe("popup actions", () => {
       source: "local",
       appliedFields: ["name", "currentPrice"],
       suppressedElementCount: 0,
+      deemphasizedElementCount: 0,
     };
     const tabsApi = {
       query: vi.fn(async () => [{ id: 42 }]),
@@ -54,6 +55,7 @@ describe("popup actions", () => {
       source: "local",
       appliedFields: ["name", "currentPrice"],
       suppressedElementCount: 0,
+      deemphasizedElementCount: 0,
     };
     const tabsApi = {
       query: vi.fn(async () => [{ id: 42 }]),

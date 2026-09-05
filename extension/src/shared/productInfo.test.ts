@@ -76,6 +76,7 @@ describe("extension message boundaries", () => {
         source: "local",
         appliedFields: ["name"],
         suppressedElementCount: 0,
+        deemphasizedElementCount: 0,
       }),
     ).toBe(true);
     expect(
@@ -85,6 +86,7 @@ describe("extension message boundaries", () => {
         source: "unknown",
         appliedFields: [],
         suppressedElementCount: -1,
+        deemphasizedElementCount: -1,
       }),
     ).toBe(false);
 
@@ -95,6 +97,7 @@ describe("extension message boundaries", () => {
         source: "local",
         appliedFields: [],
         suppressedElementCount: 0,
+        deemphasizedElementCount: 0,
       }),
     ).toBe(false);
   });

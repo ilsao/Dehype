@@ -62,6 +62,7 @@ export interface RebuildCurrentProductResponse {
   source: NeutralizeSource;
   appliedFields: ProductInfoField[];
   suppressedElementCount: number;
+  deemphasizedElementCount: number;
   fallbackReason?: string;
 }
 
@@ -228,6 +229,9 @@ export function isRebuildCurrentProductResponse(
     typeof value.suppressedElementCount === "number" &&
     Number.isInteger(value.suppressedElementCount) &&
     value.suppressedElementCount >= 0 &&
+    typeof value.deemphasizedElementCount === "number" &&
+    Number.isInteger(value.deemphasizedElementCount) &&
+    value.deemphasizedElementCount >= 0 &&
     (value.fallbackReason === undefined ||
       typeof value.fallbackReason === "string")
   );

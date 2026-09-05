@@ -7,10 +7,7 @@ import {
   revokeUnusedProviderPermissions,
   saveAiSettings,
 } from "../shared/aiSettings.js";
-import {
-  productInfoValues,
-  sendMessageToActiveTab,
-} from "./popupActions.js";
+import { sendMessageToActiveTab } from "./popupActions.js";
 
 const closeButton = document.querySelector("#close-btn");
 const settingsForm = document.querySelector("#settings-form");
@@ -23,9 +20,7 @@ const consentInput = document.querySelector("#remote-consent");
 const saveButton = document.querySelector("#save-btn");
 const neutralizeButton = document.querySelector("#neutralize-btn");
 const restoreButton = document.querySelector("#restore-btn");
-const modelResult = document.querySelector("#model-result");
-const modelOutput = document.querySelector("#model-output");
-const resultHeading = document.querySelector("#result-heading");
+const statusRow = document.querySelector("#status-row");
 const statusIndicator = document.querySelector("#status-indicator");
 const statusText = document.querySelector("#status-text");
 
@@ -45,13 +40,8 @@ settingsForm.addEventListener("submit", async (event) => {
   event.preventDefault();
   setButtonsDisabled(true);
   try {
-    const settings = await saveCurrentSettings();
-    setStatus(
-      settings.mode === "remote"
-        ? "AI analysis enabled with your consent."
-        : "On-device analysis enabled.",
-      "success",
-    );
+    await saveCurrentSettings();
+    clearStatus();
   } catch (error) {
     setStatus(errorMessage(error), "error");
   } finally {
@@ -61,42 +51,17 @@ settingsForm.addEventListener("submit", async (event) => {
 
 neutralizeButton.addEventListener("click", async () => {
   setButtonsDisabled(true);
-  setStatus("Analyzing this product…", "neutral");
+  clearStatus();
 
   try {
     await saveCurrentSettings();
-    const response = await sendMessageToActiveTab(
+    await sendMessageToActiveTab(
       chrome.tabs,
       { type: "DEHYPE_REBUILD_CURRENT_PRODUCT" },
       chrome.scripting,
     );
-
-    const appliedValues = productInfoValues(response.productInfo);
-    modelOutput.textContent = [
-      `Applied fields: ${response.appliedFields.join(", ")}`,
-      `Promotional elements hidden: ${response.suppressedElementCount}`,
-      "",
-      JSON.stringify(
-        Object.fromEntries(
-          response.appliedFields.map((field) => [field, appliedValues[field]]),
-        ),
-        null,
-        2,
-      ),
-    ].join("\n");
-    resultHeading.textContent =
-      response.source === "model" ? "AI-assisted result" : "On-device result";
-    modelResult.hidden = false;
-    setStatus(
-      response.fallbackReason
-        ? `The AI result could not be used. On-device rules were applied to the page: ${response.fallbackReason}`
-        : response.source === "model"
-          ? `AI-assisted result applied to the page (${response.appliedFields.length} fields).`
-          : `On-device result applied to the page (${response.appliedFields.length} fields).`,
-      response.fallbackReason ? "neutral" : "success",
-    );
+    clearStatus();
   } catch (error) {
-    modelResult.hidden = true;
     setStatus(errorMessage(error), "error");
   } finally {
     setButtonsDisabled(false);
@@ -105,15 +70,14 @@ neutralizeButton.addEventListener("click", async () => {
 
 restoreButton.addEventListener("click", async () => {
   setButtonsDisabled(true);
-  setStatus("Restoring the original text…", "neutral");
+  clearStatus();
   try {
     await sendMessageToActiveTab(
       chrome.tabs,
       { type: "DEHYPE_RESTORE_CURRENT_PRODUCT" },
       chrome.scripting,
     );
-    modelResult.hidden = true;
-    setStatus("Original product text restored.", "success");
+    clearStatus();
   } catch (error) {
     setStatus(errorMessage(error), "error");
   } finally {
@@ -142,12 +106,7 @@ async function loadSavedSettings() {
       settings.mode === "remote" &&
       settings.consentVersion === AI_REMOTE_CONSENT_VERSION;
     updateModeVisibility();
-    setStatus(
-      settings.mode === "remote"
-        ? "AI analysis is enabled."
-        : "On-device analysis is ready.",
-      "success",
-    );
+    clearStatus();
   } catch (error) {
     setStatus(errorMessage(error), "error");
   }
@@ -198,8 +157,14 @@ function setButtonsDisabled(disabled) {
 }
 
 function setStatus(message, state) {
+  statusRow.hidden = false;
   statusText.textContent = message;
   statusIndicator.className = `status-${state}`;
+}
+
+function clearStatus() {
+  statusText.textContent = "";
+  statusRow.hidden = true;
 }
 
 function errorMessage(error) {

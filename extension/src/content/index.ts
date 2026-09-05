@@ -122,8 +122,8 @@ export async function rebuildCurrentProduct(): Promise<ContentResponse> {
     );
     const rebuildOptions = {
       source: neutralized.source,
-      findSuppressibleElements: () =>
-        productAdapter.findSuppressibleElements(document),
+      findNeutralizationTargets: () =>
+        productAdapter.findNeutralizationTargets(document),
       onRestore: restoreCurrentProduct,
       ...(neutralized.fallbackReason
         ? { fallbackReason: neutralized.fallbackReason }
@@ -150,6 +150,7 @@ export async function rebuildCurrentProduct(): Promise<ContentResponse> {
       source: neutralized.source,
       appliedFields: rebuild.appliedFields,
       suppressedElementCount: rebuild.suppressedElementCount,
+      deemphasizedElementCount: rebuild.deemphasizedElementCount,
     };
     if (neutralized.fallbackReason) {
       response.fallbackReason = neutralized.fallbackReason;
@@ -225,7 +226,7 @@ function startNavigationMonitor(pageUrl: string): void {
       restoreCurrentProduct();
       return;
     }
-    activeRebuild.suppressNewElements();
+    activeRebuild.neutralizeNewElements();
   };
   const observer = new MutationObserver(checkUrl);
   observer.observe(document.documentElement, { childList: true, subtree: true });

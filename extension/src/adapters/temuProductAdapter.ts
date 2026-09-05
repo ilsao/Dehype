@@ -1,6 +1,10 @@
 import type { ProductElement, ProductInfo } from "../shared/productInfo";
 import {
   DEHYPE_ELEMENT_ID,
+  type NeutralizationAction,
+  type NeutralizationPresentation,
+  type NeutralizationReason,
+  type NeutralizationTarget,
   type ProductAdapter,
 } from "./productAdapter";
 
@@ -8,21 +12,104 @@ type IdFactory = (element?: Element) => string;
 
 const TEMU_HOSTS = new Set(["temu.com", "www.temu.com"]);
 const DISCOUNT_SELECTOR = "._1lS1CJSS.PjdWJn3s";
-const SUPPRESSION_SELECTORS = [
-  '[data-dehype-persuasion]',
-  '[data-testid*="countdown" i]',
-  '[data-testid*="coupon" i]',
-  '[data-testid*="flash-sale" i]',
-  '[data-testid*="lightning" i]',
-  '[data-testid*="gamification" i]',
-  '[data-testid*="upsell" i]',
-  '[data-testid*="recommendation" i]',
-  '[aria-label*="countdown" i]',
-  '[class*="countdown" i]',
-] as const;
+const SUPPRESSION_RULES = [
+  {
+    reason: "countdown",
+    selectors: [
+      '[data-testid*="countdown" i]',
+      '[aria-label*="countdown" i]',
+      '[class*="countdown" i]',
+      '#mainHeader ._33LMUpZn',
+    ],
+  },
+  {
+    reason: "promotion",
+    selectors: [
+      '[data-dehype-persuasion]',
+      '[data-testid*="coupon" i]',
+      '[data-testid*="flash-sale" i]',
+      '[data-testid*="lightning" i]',
+      '[data-dehype-promotion-container]',
+      "._2wEgFFPz.PjdWJn3s",
+      "._188rnzBo.PjdWJn3s",
+      ".Y3CaoPDB.-_dgEvGj",
+      "._100Uy0HO",
+    ],
+  },
+  {
+    reason: "gamification",
+    selectors: ['[data-testid*="gamification" i]', '[data-testid*="spin" i]'],
+  },
+  {
+    reason: "upsell",
+    selectors: ['[data-testid*="upsell" i]'],
+  },
+  {
+    reason: "recommendation",
+    selectors: [
+      '[data-testid*="recommendation" i]',
+      '[class*="goodsRecommend"]',
+      "._2z705OMN",
+    ],
+  },
+] as const satisfies readonly {
+  reason: NeutralizationReason;
+  selectors: readonly string[];
+}[];
 
-const PROMOTION_TEXT =
-  /(?:\b(?:flash sale|lightning deal|limited time|special for you|spin (?:to )?win|add .*coupon)\b|限時(?:優惠|特價)?|限时(?:优惠|特价)?|閃購|闪购|倒數|倒计时|領券|领券|轉盤|转盘)/i;
+const TEXT_SUPPRESSION_RULES = [
+  {
+    reason: "countdown",
+    pattern:
+      /(?:\bends? in\b.*\b(?:days?|hours?|minutes?|seconds?)\b|\b\d{1,2}:\d{2}:\d{2}\b|倒數|倒计时)/i,
+  },
+  {
+    reason: "scarcity",
+    pattern: /(?:\bonly\s+\d+\s+left\b|僅剩\s*\d+|仅剩\s*\d+)/i,
+  },
+  {
+    reason: "social-proof",
+    pattern:
+      /(?:^\s*\d+(?:[.,]\d+)?\s*[km萬万]?\+?\s*(?:sold|已售|售出)\s*$|(?:#\d+\s*)?(?:top rated|best[- ]seller|熱銷排行|热销排行))/i,
+  },
+  {
+    reason: "promotion",
+    pattern:
+      /(?:^\s*\d+(?:[.,]\d+)?%\s*off\s*$|after applying promos?|\binstallments? of\b|add .*eligible.*\boff\b|\b-?\d+%\s+now!.*add to cart|flash sale|lightning deal|labou?r day|limited time|special for you|限時(?:優惠|特價|搶購)?|限时(?:优惠|特价|抢购)?|閃購|闪购|領券|领券)/i,
+  },
+  {
+    reason: "gamification",
+    pattern: /(?:spin (?:to )?win|轉盤|转盘)/i,
+  },
+] as const satisfies readonly {
+  reason: NeutralizationReason;
+  pattern: RegExp;
+}[];
+
+const DEEMPHASIS_RULES = [
+  {
+    reason: "promotion",
+    presentation: "neutral-action",
+    selectors: [
+      '[data-testid*="add-to-cart" i]',
+      "._3A7bjOr2._36RgGpaI",
+    ],
+  },
+  {
+    reason: "promotion",
+    presentation: "neutral-surface",
+    selectors: [".DQPvwQBO._3csHYvw1"],
+  },
+] as const satisfies readonly {
+  reason: NeutralizationReason;
+  presentation: NeutralizationPresentation;
+  selectors: readonly string[];
+}[];
+
+const PRIMARY_ACTION_TEXT =
+  /^(?:add to cart|加入購物車|加入购物车|add to bag)$/i;
+const DELIVERY_TEXT =
+  /^(?:free shipping for this item|arrives? in .+|ships? earliest .+|此商品免運|此商品免运|預計.+送達|预计.+送达)/i;
 
 const SELECTORS = {
   name: ["._25g_jM0z", '[data-testid="product-title"]', "h1"],
@@ -34,8 +121,8 @@ const SELECTORS = {
   originalPrice: [
     '[data-testid="original-price"]',
     '[data-price-type="original"]',
-    "del",
-    "s",
+    "#goods_price del",
+    "#goods_price s",
   ],
   discount: [DISCOUNT_SELECTOR, '[data-testid="discount"]'],
   image: [
@@ -91,6 +178,31 @@ function toProductElement(
   if (!element) return undefined;
   const value = readValue(element);
   return value ? { id: idFactory(element), value } : undefined;
+}
+
+function normalizePriceDisplay(rawValue: string): string | undefined {
+  const compact = rawValue.replace(/\s+/g, " ").trim();
+  const price = compact.match(
+    /((?:CA|US|AU|NZ|HK|SG|NT)?[$€£¥₩₹])\s*([0-9][0-9.,'’]*)/i,
+  );
+  if (!price) return undefined;
+  const estimated = /\best\.?\b/i.test(compact);
+  return `${estimated ? "Estimated " : ""}${price[1]}${price[2]}`;
+}
+
+function toPriceProductElement(
+  element: Element | undefined,
+  idFactory: IdFactory,
+): ProductElement | undefined {
+  if (!element) return undefined;
+  const row = element.closest("#goods_price > div") ?? element;
+  const visualText = Array.from(row.querySelectorAll('[aria-hidden="true"]'))
+    .map((child) => child.textContent ?? "")
+    .join("");
+  const value =
+    normalizePriceDisplay(visualText) ??
+    normalizePriceDisplay(textValue(element));
+  return value ? { id: idFactory(row), value } : undefined;
 }
 
 function metadataElement(
@@ -155,19 +267,36 @@ function genericPriceElements(
   document: Document,
   idFactory: IdFactory,
 ): ProductElement[] {
-  return Array.from(document.querySelectorAll("._14At0Pe5"))
+  const elements = Array.from(document.querySelectorAll("._14At0Pe5"))
     .filter((element) => !element.closest(DISCOUNT_SELECTOR))
     .filter((element) =>
       /(?:[$€£¥₩₹]|(?:NT|US|CA|AU|HK|SG)\$)\s*\d/i.test(textValue(element)),
     )
-    .map((element) => toProductElement(element, idFactory))
+    .map((element) => toPriceProductElement(element, idFactory))
     .filter((element): element is ProductElement => {
       return element !== undefined && parseLocalizedPrice(element.value) !== undefined;
     })
     .filter(
       (element, index, elements) =>
-        elements.findIndex((candidate) => candidate.value === element.value) === index,
-    )
+        elements.findIndex(
+          (candidate) =>
+            candidate.id === element.id || candidate.value === element.value,
+        ) === index,
+    );
+
+  const explicitCurrency = elements
+    .map(({ value }) => value.match(/^(?:Estimated )?((?:CA|US|AU|NZ|HK|SG|NT)\$)/i)?.[1])
+    .filter((currency): currency is string => currency !== undefined);
+  const sharedCurrency = new Set(explicitCurrency).size === 1
+    ? explicitCurrency[0]
+    : undefined;
+  return elements
+    .map((element) => ({
+      ...element,
+      value: sharedCurrency
+        ? element.value.replace(/^(Estimated )?\$/, `$1${sharedCurrency}`)
+        : element.value,
+    }))
     .slice(0, 2);
 }
 
@@ -197,11 +326,11 @@ export class TemuProductAdapter implements ProductAdapter {
       nameFallback(document, this.idFactory);
     if (!name) throw new Error("The Temu product name could not be extracted.");
 
-    let currentPrice = toProductElement(
+    let currentPrice = toPriceProductElement(
       findFirst(document, SELECTORS.currentPrice),
       this.idFactory,
     );
-    let originalPrice = toProductElement(
+    let originalPrice = toPriceProductElement(
       findFirst(document, SELECTORS.originalPrice),
       this.idFactory,
     );
@@ -259,34 +388,151 @@ export class TemuProductAdapter implements ProductAdapter {
     return productInfo;
   }
 
-  public findSuppressibleElements(document: Document): HTMLElement[] {
-    const explicit = Array.from(
-      document.querySelectorAll<HTMLElement>(SUPPRESSION_SELECTORS.join(",")),
-    );
-    const textMatches = Array.from(
-      document.querySelectorAll<HTMLElement>("aside, section, div"),
-    ).filter((element) => {
-      const text = textValue(element);
-      return text.length > 0 && text.length <= 300 && PROMOTION_TEXT.test(text);
-    });
+  public findNeutralizationTargets(document: Document): NeutralizationTarget[] {
+    const targets = new Map<HTMLElement, NeutralizationTarget>();
 
-    const safeCandidates = [...new Set([...explicit, ...textMatches])].filter(
-      (element) =>
-        !element.hasAttribute(DEHYPE_ELEMENT_ID) &&
-        !element.querySelector(`[${DEHYPE_ELEMENT_ID}]`) &&
-        !element.matches("button, input, select, [role=button]") &&
-        !element.querySelector(
-          'button, input, select, [role="button"], [href*="cart" i], [href*="checkout" i]',
-        ),
+    for (const rule of SUPPRESSION_RULES) {
+      addTargets(
+        targets,
+        document.querySelectorAll<HTMLElement>(rule.selectors.join(",")),
+        "suppress",
+        rule.reason,
+        "hidden-container",
+      );
+    }
+    for (const rule of TEXT_SUPPRESSION_RULES) {
+      const textTargets = elementsWithOwnText(document, rule.pattern);
+      addTargets(
+        targets,
+        rule.reason === "countdown" || rule.reason === "promotion"
+          ? textTargets.map((element) =>
+              findPromotionalContainer(document, element),
+            )
+          : textTargets,
+        "suppress",
+        rule.reason,
+        "hidden-container",
+      );
+    }
+    for (const rule of DEEMPHASIS_RULES) {
+      addTargets(
+        targets,
+        document.querySelectorAll<HTMLElement>(rule.selectors.join(",")),
+        "deemphasize",
+        rule.reason,
+        rule.presentation,
+      );
+    }
+    addTargets(
+      targets,
+      interactiveElementsWithText(document, PRIMARY_ACTION_TEXT),
+      "deemphasize",
+      "promotion",
+      "neutral-action",
+    );
+    addTargets(
+      targets,
+      interactiveElementsWithText(document, DELIVERY_TEXT),
+      "deemphasize",
+      "promotion",
+      "neutral-fact",
     );
 
-    // Prefer the smallest matching block so a promotional child does not hide
-    // an otherwise useful product-details container.
-    return safeCandidates.filter(
-      (element) =>
-        !safeCandidates.some(
-          (candidate) => candidate !== element && element.contains(candidate),
-        ),
+    return [...targets.values()].filter(
+      ({ element, action }) =>
+        (action === "deemphasize" ||
+          (!element.hasAttribute(DEHYPE_ELEMENT_ID) &&
+            !element.querySelector(`[${DEHYPE_ELEMENT_ID}]`))) &&
+        (action !== "suppress" || !isProtectedCommerceControl(element)),
     );
   }
+}
+
+function addTargets(
+  targets: Map<HTMLElement, NeutralizationTarget>,
+  elements: Iterable<HTMLElement>,
+  action: NeutralizationAction,
+  reason: NeutralizationReason,
+  presentation: NeutralizationPresentation,
+): void {
+  for (const element of elements) {
+    const existing = targets.get(element);
+    if (existing?.action === "suppress") continue;
+    targets.set(element, { element, action, reason, presentation });
+  }
+}
+
+function findPromotionalContainer(
+  document: Document,
+  element: HTMLElement,
+): HTMLElement {
+  if (element.closest("#goods_price")) return element;
+
+  const viewWidth = document.defaultView?.innerWidth ?? 0;
+  const candidates: HTMLElement[] = [];
+  let current: HTMLElement | null = element;
+  for (let depth = 0; current && depth < 10; depth += 1) {
+    if (
+      current.id === "mainHeader" ||
+      current.id === "rightContent" ||
+      current.hasAttribute(DEHYPE_ELEMENT_ID)
+    ) {
+      break;
+    }
+    const bounds = current.getBoundingClientRect();
+    const text = textValue(current);
+    if (
+      bounds.height > 0 &&
+      bounds.height <= 120 &&
+      text.length <= 700 &&
+      !current.querySelector("input, select")
+    ) {
+      candidates.push(current);
+    }
+    current = current.parentElement;
+  }
+
+  const fullWidthHeader = [...candidates].reverse().find((candidate) => {
+    const bounds = candidate.getBoundingClientRect();
+    return (
+      candidate.closest("#mainHeader") !== null &&
+      viewWidth > 0 &&
+      bounds.width >= viewWidth * 0.8 &&
+      bounds.height <= 80
+    );
+  });
+  return fullWidthHeader ?? candidates.at(-1) ?? element;
+}
+
+function elementsWithOwnText(
+  document: Document,
+  pattern: RegExp,
+): HTMLElement[] {
+  return Array.from(
+    document.querySelectorAll<HTMLElement>("span, div, p, strong, em"),
+  ).filter((element) => {
+    const ownText = Array.from(element.childNodes)
+      .filter((node) => node.nodeType === Node.TEXT_NODE)
+      .map((node) => node.textContent ?? "")
+      .join(" ")
+      .replace(/\s+/g, " ")
+      .trim();
+    return ownText.length > 0 && ownText.length <= 180 && pattern.test(ownText);
+  });
+}
+
+function interactiveElementsWithText(
+  document: Document,
+  pattern: RegExp,
+): HTMLElement[] {
+  return Array.from(
+    document.querySelectorAll<HTMLElement>('button, [role="button"]'),
+  ).filter((element) => pattern.test(textValue(element)));
+}
+
+function isProtectedCommerceControl(element: HTMLElement): boolean {
+  return (
+    element.matches('button, input, select, [role="button"]') &&
+    PRIMARY_ACTION_TEXT.test(textValue(element))
+  );
 }
