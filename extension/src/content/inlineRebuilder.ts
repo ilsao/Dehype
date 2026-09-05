@@ -12,6 +12,7 @@ const REPLACEMENT_MARKER = "data-dehype-replacement";
 const SUPPRESSED_MARKER = "data-dehype-suppressed";
 const DEEMPHASIZED_MARKER = "data-dehype-deemphasized";
 const NEUTRAL_MODE_MARKER = "data-dehype-neutral-mode";
+const LAYOUT_ROOT_MARKER = "data-dehype-layout-root";
 const STYLE_ID = "dehype-inline-rebuild-style";
 const CONTROL_ID = "dehype-inline-rebuild-control";
 
@@ -45,6 +46,7 @@ interface InlineRebuildOptions {
   source: NeutralizeSource;
   fallbackReason?: string;
   findNeutralizationTargets: () => NeutralizationTarget[];
+  neutralLayoutRoot?: HTMLElement;
   onRestore: () => void;
 }
 
@@ -59,9 +61,7 @@ export function applyInlineRebuild(
   options: InlineRebuildOptions,
 ): InlineRebuildHandle {
   const replacements: ReplacementEntry[] = [];
-  const neutralizations: NeutralizationEntry[] = [];
-  const suppressedElements = new Set<HTMLElement>();
-  const deemphasizedElements = new Set<HTMLElement>();
+  const neutralizations = new Map<HTMLElement, NeutralizationEntry>();
   const usedSources = new Set<HTMLElement>();
   const appliedFields: ProductInfoField[] = [];
   const rootMarker = snapshotAttribute(
@@ -69,7 +69,15 @@ export function applyInlineRebuild(
     NEUTRAL_MODE_MARKER,
   );
   sourceDocument.documentElement.setAttribute(NEUTRAL_MODE_MARKER, "true");
-  const style = createPageStyle(sourceDocument);
+  const layoutRoot = options.neutralLayoutRoot?.isConnected
+    ? options.neutralLayoutRoot
+    : undefined;
+  const layoutRootMarker = layoutRoot
+    ? snapshotAttribute(layoutRoot, LAYOUT_ROOT_MARKER)
+    : undefined;
+  layoutRoot?.setAttribute(LAYOUT_ROOT_MARKER, "true");
+  const layoutWidth = layoutRoot?.getBoundingClientRect().width;
+  const style = createPageStyle(sourceDocument, layoutWidth);
 
   applyPriceSummary(
     sourceDocument,
@@ -113,19 +121,11 @@ export function applyInlineRebuild(
 
   const neutralizeNewElements = (): number => {
     let added = 0;
+    const nextTargets = new Map<HTMLElement, NeutralizationTarget>();
     for (const target of options.findNeutralizationTargets()) {
       const { element } = target;
-      const marker =
-        target.action === "suppress"
-          ? SUPPRESSED_MARKER
-          : DEEMPHASIZED_MARKER;
-      const appliedElements =
-        target.action === "suppress"
-          ? suppressedElements
-          : deemphasizedElements;
       if (
         !element.isConnected ||
-        appliedElements.has(element) ||
         (target.action === "suppress" &&
           replacements.some(
             ({ source, replacement }) =>
@@ -137,12 +137,30 @@ export function applyInlineRebuild(
       ) {
         continue;
       }
-      neutralizations.push({
+      nextTargets.set(element, target);
+    }
+
+    for (const [element, entry] of neutralizations) {
+      const nextTarget = nextTargets.get(element);
+      const nextMarker = nextTarget ? markerFor(nextTarget) : undefined;
+      if (!nextTarget || nextMarker !== entry.marker) {
+        restoreAttribute(element, entry.marker, entry.originalMarker);
+        neutralizations.delete(element);
+      }
+    }
+
+    for (const [element, target] of nextTargets) {
+      const marker = markerFor(target);
+      const existing = neutralizations.get(element);
+      if (existing) {
+        element.setAttribute(marker, target.presentation);
+        continue;
+      }
+      neutralizations.set(element, {
         element,
         marker,
         originalMarker: snapshotAttribute(element, marker),
       });
-      appliedElements.add(element);
       element.setAttribute(marker, target.presentation);
       added += 1;
     }
@@ -157,11 +175,12 @@ export function applyInlineRebuild(
       appliedFields.includes(field),
     ),
     get suppressedElementCount() {
-      return neutralizations.filter(({ marker }) => marker === SUPPRESSED_MARKER)
-        .length;
+      return [...neutralizations.values()].filter(
+        ({ marker }) => marker === SUPPRESSED_MARKER,
+      ).length;
     },
     get deemphasizedElementCount() {
-      return neutralizations.filter(
+      return [...neutralizations.values()].filter(
         ({ marker }) => marker === DEEMPHASIZED_MARKER,
       ).length;
     },
@@ -169,7 +188,7 @@ export function applyInlineRebuild(
       replacements.every(
         ({ source, replacement }) =>
           source.isConnected && (replacement?.isConnected ?? true),
-      ),
+      ) && (layoutRoot?.isConnected ?? true),
     neutralizeNewElements,
     restore: () => {
       if (restored) return;
@@ -178,8 +197,11 @@ export function applyInlineRebuild(
         replacement?.remove();
         restoreAttribute(source, ORIGINAL_MARKER, originalMarker);
       }
-      for (const { element, marker, originalMarker } of neutralizations) {
+      for (const { element, marker, originalMarker } of neutralizations.values()) {
         restoreAttribute(element, marker, originalMarker);
+      }
+      if (layoutRoot && layoutRootMarker) {
+        restoreAttribute(layoutRoot, LAYOUT_ROOT_MARKER, layoutRootMarker);
       }
       restoreAttribute(
         sourceDocument.documentElement,
@@ -190,6 +212,14 @@ export function applyInlineRebuild(
       style.remove();
     },
   };
+}
+
+function markerFor(
+  target: NeutralizationTarget,
+): typeof SUPPRESSED_MARKER | typeof DEEMPHASIZED_MARKER {
+  return target.action === "suppress"
+    ? SUPPRESSED_MARKER
+    : DEEMPHASIZED_MARKER;
 }
 
 function applyPriceSummary(
@@ -267,13 +297,22 @@ function applyPriceSummary(
   for (const { field } of priceEntries) appliedFields.push(field);
 }
 
-function createPageStyle(sourceDocument: Document): HTMLStyleElement {
+function createPageStyle(
+  sourceDocument: Document,
+  layoutWidth?: number,
+): HTMLStyleElement {
   sourceDocument.getElementById(STYLE_ID)?.remove();
   const style = sourceDocument.createElement("style");
   style.id = STYLE_ID;
   style.textContent = `
     [${ORIGINAL_MARKER}="true"], [${SUPPRESSED_MARKER}] {
       display: none !important;
+    }
+    [${LAYOUT_ROOT_MARKER}="true"] {
+      width: ${layoutWidth && layoutWidth > 0 ? `min(calc(100vw - 32px), ${layoutWidth}px)` : "auto"} !important;
+      max-width: ${layoutWidth && layoutWidth > 0 ? `${layoutWidth}px` : "100%"} !important;
+      margin-inline: auto !important;
+      float: none !important;
     }
     html[${NEUTRAL_MODE_MARKER}="true"] body *,
     html[${NEUTRAL_MODE_MARKER}="true"] body *::before,

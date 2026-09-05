@@ -23,10 +23,10 @@ function storageWith(initial = {}) {
 }
 
 describe("AI settings", () => {
-  it("defaults to on-device analysis", () => {
+  it("defaults to unconfigured structural cleanup", () => {
     expect(validateAiSettings(undefined)).toEqual({
       version: AI_SETTINGS_VERSION,
-      mode: "local",
+      state: "unconfigured",
     });
   });
 
@@ -34,7 +34,7 @@ describe("AI settings", () => {
     expect(() =>
       validateAiSettings({
         version: AI_SETTINGS_VERSION,
-        mode: "remote",
+        state: "remote",
         provider: "openai",
         model: "gpt-test",
         apiKey: "key",
@@ -46,7 +46,7 @@ describe("AI settings", () => {
     const storage = storageWith();
     const settings = {
       version: AI_SETTINGS_VERSION,
-      mode: "remote",
+      state: "remote",
       provider: "gemini",
       model: " gemini-3.5-flash-lite ",
       apiKey: " test-key ",
@@ -60,7 +60,7 @@ describe("AI settings", () => {
     });
   });
 
-  it("migrates legacy credentials without inferring consent", async () => {
+  it("migrates legacy local credentials without inferring consent", async () => {
     const storage = storageWith({
       [AI_SETTINGS_KEY]: {
         provider: "openai",
@@ -68,12 +68,36 @@ describe("AI settings", () => {
         apiKey: "key",
       },
     });
-    await expect(loadAiSettings(storage)).resolves.toMatchObject({
+    await expect(loadAiSettings(storage)).resolves.toEqual({
       version: AI_SETTINGS_VERSION,
-      mode: "local",
+      state: "unconfigured",
       provider: "openai",
+      model: "gpt-4.1-mini",
+      apiKey: "key",
     });
     expect(storage.set).toHaveBeenCalled();
+  });
+
+  it("migrates consented legacy remote settings", async () => {
+    const storage = storageWith({
+      [AI_SETTINGS_KEY]: {
+        version: 1,
+        mode: "remote",
+        provider: "gemini",
+        model: "gemini-3.5-flash-lite",
+        apiKey: "key",
+        consentVersion: AI_REMOTE_CONSENT_VERSION,
+      },
+    });
+
+    await expect(loadAiSettings(storage)).resolves.toEqual({
+      version: AI_SETTINGS_VERSION,
+      state: "remote",
+      provider: "gemini",
+      model: "gemini-3.5-flash-lite",
+      apiKey: "key",
+      consentVersion: AI_REMOTE_CONSENT_VERSION,
+    });
   });
 
   it("resets only malformed settings", async () => {
@@ -83,7 +107,7 @@ describe("AI settings", () => {
     });
     await expect(loadAiSettings(storage)).resolves.toEqual({
       version: AI_SETTINGS_VERSION,
-      mode: "local",
+      state: "unconfigured",
     });
     expect(storage.remove).toHaveBeenCalledWith(AI_SETTINGS_KEY);
     expect(storage.values.unrelated).toBe("preserved");

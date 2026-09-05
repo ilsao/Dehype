@@ -25,6 +25,7 @@ const SUPPRESSION_RULES = [
   {
     reason: "promotion",
     selectors: [
+      "#mainStickyBenefitBar",
       '[data-dehype-persuasion]',
       '[data-testid*="coupon" i]',
       '[data-testid*="flash-sale" i]',
@@ -33,7 +34,6 @@ const SUPPRESSION_RULES = [
       "._2wEgFFPz.PjdWJn3s",
       "._188rnzBo.PjdWJn3s",
       ".Y3CaoPDB.-_dgEvGj",
-      "._100Uy0HO",
     ],
   },
   {
@@ -47,6 +47,7 @@ const SUPPRESSION_RULES = [
   {
     reason: "recommendation",
     selectors: [
+      "#goodsRecommend",
       '[data-testid*="recommendation" i]',
       '[class*="goodsRecommend"]',
       "._2z705OMN",
@@ -108,6 +109,8 @@ const DEEMPHASIS_RULES = [
 
 const PRIMARY_ACTION_TEXT =
   /^(?:add to cart|加入購物車|加入购物车|add to bag)$/i;
+const CART_DESTINATION_TEXT = /^(?:go to cart|前往購物車|前往购物车)$/i;
+const LIGHTNING_DEAL_TEXT = /^(?:lightning deal|閃電特價|闪电特价)$/i;
 const DELIVERY_TEXT =
   /^(?:free shipping for this item|arrives? in .+|ships? earliest .+|此商品免運|此商品免运|預計.+送達|预计.+送达)/i;
 
@@ -437,6 +440,13 @@ export class TemuProductAdapter implements ProductAdapter {
       "promotion",
       "neutral-fact",
     );
+    addTargets(
+      targets,
+      findRedundantLightningDealCards(document),
+      "suppress",
+      "promotion",
+      "hidden-container",
+    );
 
     return [...targets.values()].filter(
       ({ element, action }) =>
@@ -444,6 +454,14 @@ export class TemuProductAdapter implements ProductAdapter {
           (!element.hasAttribute(DEHYPE_ELEMENT_ID) &&
             !element.querySelector(`[${DEHYPE_ELEMENT_ID}]`))) &&
         (action !== "suppress" || !isProtectedCommerceControl(element)),
+    );
+  }
+
+  public findNeutralLayoutRoot(document: Document): HTMLElement | undefined {
+    return (
+      document.querySelector<HTMLElement>("#main_scale > .baseContent") ??
+      document.querySelector<HTMLElement>('.baseContent[role="main"]') ??
+      undefined
     );
   }
 }
@@ -528,6 +546,60 @@ function interactiveElementsWithText(
   return Array.from(
     document.querySelectorAll<HTMLElement>('button, [role="button"]'),
   ).filter((element) => pattern.test(textValue(element)));
+}
+
+function findRedundantLightningDealCards(document: Document): HTMLElement[] {
+  const productPanel = document.querySelector<HTMLElement>("#rightContent");
+  if (!productPanel) return [];
+
+  const cartControls = interactiveElementsWithText(
+    productPanel.ownerDocument,
+    CART_DESTINATION_TEXT,
+  ).filter(
+    (element) => productPanel.contains(element) && isUsableControl(element),
+  );
+  const cards = new Set<HTMLElement>();
+
+  for (const label of elementsWithOwnText(document, LIGHTNING_DEAL_TEXT)) {
+    if (!productPanel.contains(label)) continue;
+    const card = closestAncestorContainingControl(
+      label,
+      productPanel,
+      CART_DESTINATION_TEXT,
+    );
+    if (!card) continue;
+
+    const hasAlternativeControl = cartControls.some(
+      (control) => !card.contains(control),
+    );
+    if (hasAlternativeControl) cards.add(card);
+  }
+
+  return [...cards];
+}
+
+function closestAncestorContainingControl(
+  element: HTMLElement,
+  boundary: HTMLElement,
+  pattern: RegExp,
+): HTMLElement | undefined {
+  let current: HTMLElement | null = element;
+  while (current && current !== boundary) {
+    if (interactiveElementsWithText(current.ownerDocument, pattern).some(
+      (control) => current?.contains(control),
+    )) {
+      return current;
+    }
+    current = current.parentElement;
+  }
+  return undefined;
+}
+
+function isUsableControl(element: HTMLElement): boolean {
+  return (
+    (!(element instanceof HTMLButtonElement) || !element.disabled) &&
+    element.getAttribute("aria-disabled") !== "true"
+  );
 }
 
 function isProtectedCommerceControl(element: HTMLElement): boolean {

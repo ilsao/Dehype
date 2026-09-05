@@ -92,10 +92,6 @@ button:disabled {
   gap: 11px;
 }
 
-#remote-settings[hidden] {
-  display: none;
-}
-
 #consent-row {
   display: flex;
   align-items: flex-start;

@@ -1,5 +1,5 @@
 export const AI_SETTINGS_KEY = "aiSettings";
-export const AI_SETTINGS_VERSION = 1;
+export const AI_SETTINGS_VERSION = 2;
 export const AI_REMOTE_CONSENT_VERSION = 1;
 export const AI_PROVIDERS = ["openai", "gemini", "claude"];
 
@@ -21,31 +21,53 @@ export function defaultModelForProvider(provider) {
 
 export function validateAiSettings(value) {
   if (!value || typeof value !== "object") {
-    return { version: AI_SETTINGS_VERSION, mode: "local" };
+    return { version: AI_SETTINGS_VERSION, state: "unconfigured" };
   }
 
-  if (value.version === AI_SETTINGS_VERSION && value.mode === "local") {
-    return copyOptionalCredentials(value, { version: AI_SETTINGS_VERSION, mode: "local" });
+  if (
+    value.version === AI_SETTINGS_VERSION &&
+    value.state === "unconfigured"
+  ) {
+    return copyOptionalCredentials(value, {
+      version: AI_SETTINGS_VERSION,
+      state: "unconfigured",
+    });
   }
 
-  if (value.version === AI_SETTINGS_VERSION && value.mode === "remote") {
+  if (value.version === AI_SETTINGS_VERSION && value.state === "remote") {
     if (value.consentVersion !== AI_REMOTE_CONSENT_VERSION) {
       throw new Error("Consent is required before product data can be sent.");
     }
     return {
       version: AI_SETTINGS_VERSION,
-      mode: "remote",
+      state: "remote",
       ...validateRemoteCredentials(value),
       consentVersion: AI_REMOTE_CONSENT_VERSION,
     };
   }
 
-  // Legacy records retain their credentials but default to local mode. Consent
-  // must never be inferred from a previously saved API key.
-  if (value.version === undefined) {
+  if (
+    value.version === 1 &&
+    value.mode === "remote" &&
+    value.consentVersion === AI_REMOTE_CONSENT_VERSION
+  ) {
+    return {
+      version: AI_SETTINGS_VERSION,
+      state: "remote",
+      ...validateRemoteCredentials(value),
+      consentVersion: AI_REMOTE_CONSENT_VERSION,
+    };
+  }
+
+  // Legacy local records may prefill valid credentials, but consent and remote
+  // analysis must never be inferred from them.
+  if (
+    value.version === undefined ||
+    (value.version === 1 && value.mode === "local")
+  ) {
     return copyOptionalCredentials(value, {
       version: AI_SETTINGS_VERSION,
-      mode: "local",
+      state: "unconfigured",
     });
   }
 
@@ -55,7 +77,7 @@ export function validateAiSettings(value) {
 export async function loadAiSettings(storageArea) {
   const stored = await storageArea.get(AI_SETTINGS_KEY);
   const value = stored[AI_SETTINGS_KEY];
-  if (!value) return { version: AI_SETTINGS_VERSION, mode: "local" };
+  if (!value) return { version: AI_SETTINGS_VERSION, state: "unconfigured" };
 
   try {
     const settings = validateAiSettings(value);
@@ -65,7 +87,7 @@ export async function loadAiSettings(storageArea) {
     return settings;
   } catch {
     await storageArea.remove?.(AI_SETTINGS_KEY);
-    return { version: AI_SETTINGS_VERSION, mode: "local" };
+    return { version: AI_SETTINGS_VERSION, state: "unconfigured" };
   }
 }
 
@@ -80,11 +102,11 @@ export async function getAiSettingsStatus(storageArea) {
     const settings = await loadAiSettings(storageArea);
     return {
       healthy: true,
-      configured: settings.mode === "remote",
-      mode: settings.mode,
+      configured: settings.state === "remote",
+      mode: settings.state,
     };
   } catch {
-    return { healthy: false, configured: false, mode: "local" };
+    return { healthy: false, configured: false, mode: "unconfigured" };
   }
 }
 

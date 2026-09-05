@@ -29,7 +29,7 @@ beforeEach(() => {
           name: "Wireless Earbuds",
           currentPrice: "$12.99",
         },
-        source: "local",
+        source: "structural",
       })),
     },
   });

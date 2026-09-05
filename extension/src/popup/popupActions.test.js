@@ -15,7 +15,7 @@ describe("popup actions", () => {
     const response = {
       type: "DEHYPE_REBUILD_CURRENT_PRODUCT_RESULT",
       productInfo,
-      source: "local",
+      source: "structural",
       appliedFields: ["name", "currentPrice"],
       suppressedElementCount: 0,
       deemphasizedElementCount: 0,
@@ -52,7 +52,7 @@ describe("popup actions", () => {
     const response = {
       type: "DEHYPE_REBUILD_CURRENT_PRODUCT_RESULT",
       productInfo,
-      source: "local",
+      source: "structural",
       appliedFields: ["name", "currentPrice"],
       suppressedElementCount: 0,
       deemphasizedElementCount: 0,

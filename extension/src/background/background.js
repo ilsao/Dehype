@@ -1,5 +1,4 @@
 import { neutralizeProductValues } from "./aiProvider.js";
-import { neutralizeValuesLocally } from "./localNeutralizer.js";
 import {
   getAiSettingsStatus,
   loadAiSettings,
@@ -38,10 +37,13 @@ if (typeof chrome !== "undefined" && chrome.runtime?.onMessage) {
 export async function neutralizeWithSavedSettings(productValues, dependencies = {}) {
   const storage = dependencies.storage ?? chrome.storage.local;
   const settings = await loadAiSettings(storage);
-  const localValues = neutralizeValuesLocally(productValues);
 
-  if (settings.mode !== "remote") {
-    return { productValues: localValues, source: "local" };
+  if (settings.state !== "remote") {
+    return {
+      productValues: { ...productValues },
+      source: "structural",
+      fallbackReason: "Configure and consent to an AI provider to analyze product wording.",
+    };
   }
 
   try {
@@ -50,32 +52,29 @@ export async function neutralizeWithSavedSettings(productValues, dependencies = 
       productValues,
       fetchImpl: dependencies.fetchImpl,
     });
-    // A model may omit fields or retain subtle urgency. Keep deterministic
-    // coverage as the baseline, overlay usable model output, then apply the
-    // local rules once more so remote mode cannot weaken core neutralization.
+    // A model may omit fields. Preserve original facts for omitted values and
+    // overlay only validated model text.
     const modelOverlay = {
-      ...localValues,
+      ...productValues,
       ...modelValues,
     };
     // Prices and images are canonical local facts. The model may rewrite only
     // language fields and must never alter these values or introduce them.
     for (const field of ["originalPrice", "currentPrice", "image"]) {
-      if (Object.hasOwn(localValues, field)) {
-        modelOverlay[field] = localValues[field];
+      if (Object.hasOwn(productValues, field)) {
+        modelOverlay[field] = productValues[field];
       } else {
         delete modelOverlay[field];
       }
     }
-    const productValuesWithDeterministicCoverage =
-      neutralizeValuesLocally(modelOverlay);
     return {
-      productValues: productValuesWithDeterministicCoverage,
+      productValues: modelOverlay,
       source: "model",
     };
   } catch (error) {
     return {
-      productValues: localValues,
-      source: "local",
+      productValues: { ...productValues },
+      source: "structural",
       fallbackReason:
         error instanceof Error
           ? error.message

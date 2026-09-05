@@ -73,7 +73,7 @@ describe("extension message boundaries", () => {
       isRebuildCurrentProductResponse({
         type: "DEHYPE_REBUILD_CURRENT_PRODUCT_RESULT",
         productInfo: { name: { id: "name", value: "Product" } },
-        source: "local",
+        source: "structural",
         appliedFields: ["name"],
         suppressedElementCount: 0,
         deemphasizedElementCount: 0,
@@ -94,7 +94,7 @@ describe("extension message boundaries", () => {
       isRebuildCurrentProductResponse({
         type: "DEHYPE_REBUILD_CURRENT_PRODUCT_RESULT",
         productInfo: { name: { id: "name", value: "Product" } },
-        source: "local",
+        source: "structural",
         appliedFields: [],
         suppressedElementCount: 0,
         deemphasizedElementCount: 0,

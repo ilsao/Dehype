@@ -120,11 +120,13 @@ export async function rebuildCurrentProduct(): Promise<ContentResponse> {
       productInfo,
       neutralized.productValues,
     );
+    const neutralLayoutRoot = productAdapter.findNeutralLayoutRoot(document);
     const rebuildOptions = {
       source: neutralized.source,
       findNeutralizationTargets: () =>
         productAdapter.findNeutralizationTargets(document),
       onRestore: restoreCurrentProduct,
+      ...(neutralLayoutRoot ? { neutralLayoutRoot } : {}),
       ...(neutralized.fallbackReason
         ? { fallbackReason: neutralized.fallbackReason }
         : {}),

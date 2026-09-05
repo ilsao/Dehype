@@ -362,4 +362,69 @@ describe("TemuProductAdapter", () => {
       presentation: "neutral-fact",
     });
   });
+
+  it("suppresses the recommendation rail, sticky benefit ad, and redundant lightning card", () => {
+    const document = new DOMParser().parseFromString(
+      `
+        <div id="main_scale">
+          <main class="baseContent" role="main">
+            <h1 class="_25g_jM0z">Kitchen scissors</h1>
+            <div id="rightContent">
+              <section id="lightning-card">
+                <span>LIGHTNING DEAL</span>
+                <div role="button">Go to cart</div>
+              </section>
+              <section id="primary-purchase-row" class="_100Uy0HO">
+                <button>decrease quantity</button>
+                <div role="button">Go to cart</div>
+                <button>increase quantity</button>
+              </section>
+            </div>
+            <section id="goodsRecommend">Explore your interests</section>
+          </main>
+        </div>
+        <aside id="mainStickyBenefitBar">Free shipping — Price Match Guarantee</aside>
+      `,
+      "text/html",
+    );
+    const adapter = new TemuProductAdapter();
+    const targets = adapter.findNeutralizationTargets(document);
+    const target = (id: string) =>
+      targets.find(({ element }) => element.id === id);
+
+    expect(target("goodsRecommend")).toMatchObject({
+      action: "suppress",
+      reason: "recommendation",
+    });
+    expect(target("mainStickyBenefitBar")).toMatchObject({
+      action: "suppress",
+      reason: "promotion",
+    });
+    expect(target("lightning-card")).toMatchObject({
+      action: "suppress",
+      reason: "promotion",
+    });
+    expect(target("primary-purchase-row")).toBeUndefined();
+    expect(adapter.findNeutralLayoutRoot(document)?.className).toBe("baseContent");
+  });
+
+  it("never suppresses a lightning card when it is the only cart control", () => {
+    const document = new DOMParser().parseFromString(
+      `
+        <h1 class="_25g_jM0z">Kitchen scissors</h1>
+        <div id="rightContent">
+          <section id="only-purchase-card">
+            <span>LIGHTNING DEAL</span>
+            <div role="button">Go to cart</div>
+          </section>
+        </div>
+      `,
+      "text/html",
+    );
+
+    const targets = new TemuProductAdapter().findNeutralizationTargets(document);
+    expect(
+      targets.find(({ element }) => element.id === "only-purchase-card"),
+    ).toBeUndefined();
+  });
 });

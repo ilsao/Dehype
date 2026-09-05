@@ -19,7 +19,7 @@ export interface ProductInfo {
 export type ProductInfoField = keyof ProductInfo;
 export type ProductInfoValueOnly = { [Field in ProductInfoField]?: string };
 export type NeutralizedProductValues = ProductInfoValueOnly;
-export type NeutralizeSource = "local" | "model";
+export type NeutralizeSource = "structural" | "model";
 
 export const PRODUCT_INFO_FIELDS = [
   "name",
@@ -168,7 +168,7 @@ export function isNeutralizeProductValuesResponse(
     isRecord(value) &&
     value.type === "DEHYPE_NEUTRALIZE_VALUES_RESULT" &&
     isNeutralizedProductValues(value.productValues) &&
-    (value.source === "local" || value.source === "model") &&
+    (value.source === "structural" || value.source === "model") &&
     (value.fallbackReason === undefined ||
       typeof value.fallbackReason === "string")
   );
@@ -216,7 +216,7 @@ export function isRebuildCurrentProductResponse(
     isRecord(value) &&
     value.type === "DEHYPE_REBUILD_CURRENT_PRODUCT_RESULT" &&
     isProductInfo(value.productInfo) &&
-    (value.source === "local" || value.source === "model") &&
+    (value.source === "structural" || value.source === "model") &&
     Array.isArray(value.appliedFields) &&
     value.appliedFields.length > 0 &&
     value.appliedFields.every(

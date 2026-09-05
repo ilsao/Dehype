@@ -21,11 +21,12 @@ extension in `dist/`. To inspect it locally, open `chrome://extensions`, enable
 Developer mode, choose **Load unpacked**, and select the generated `dist/`
 directory.
 
-The popup uses deterministic on-device rules by default. A user may explicitly
-enable an AI provider, grant access to that provider's origin, and consent to
-sending the extracted product values. Provider, model, consent, and API-key
-settings are versioned in `chrome.storage.local`; the key is not encrypted and
-remains accessible to the local Chrome profile.
+The popup offers consent-based analysis through OpenAI, Gemini, or Claude. If
+AI is not configured or cannot return a valid result, Dehype preserves the
+original product facts and still applies deterministic structural cleanup to
+the active Temu page. Provider, model, consent, and API-key settings are
+versioned in `chrome.storage.local`; the key is not encrypted and remains
+accessible to the local Chrome profile.
 
 The current adapter supports Temu product-detail URLs ending in `-g-<id>.html`.
 Product extraction uses the `ProductInfo` contract in

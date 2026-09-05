@@ -28,4 +28,5 @@ export interface ProductAdapter {
   isSupportedPage(url: string): boolean;
   extractProductInfo(document: Document, pageUrl: string): ProductInfo;
   findNeutralizationTargets(document: Document): NeutralizationTarget[];
+  findNeutralLayoutRoot(document: Document): HTMLElement | undefined;
 }

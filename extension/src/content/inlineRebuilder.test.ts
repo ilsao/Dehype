@@ -26,7 +26,7 @@ describe("inline page rebuilder", () => {
       document,
       { name: { id: "name-id", value: "Mug" } },
       {
-        source: "local",
+        source: "structural",
         findNeutralizationTargets: () => [{
           element: document.querySelector<HTMLElement>("#promo")!,
           action: "suppress",
@@ -89,7 +89,7 @@ describe("inline page rebuilder", () => {
       document,
       { name: { id: "name-id", value: "Neutral mug" } },
       {
-        source: "local",
+        source: "structural",
         findNeutralizationTargets: () => [{
           element: document.querySelector<HTMLElement>("#promo")!,
           action: "suppress",
@@ -115,7 +115,7 @@ describe("inline page rebuilder", () => {
       document,
       { name: { id: "name-id", value: "Neutral mug" } },
       {
-        source: "local",
+        source: "structural",
         findNeutralizationTargets: () => candidates.map((element) => ({
           element,
           action: "suppress" as const,
@@ -136,13 +136,72 @@ describe("inline page rebuilder", () => {
     expect(latePromo.hasAttribute("data-dehype-suppressed")).toBe(false);
   });
 
+  it("restores a conditional suppression when it no longer applies", () => {
+    document.body.innerHTML = `
+      <h1 ${DEHYPE_ELEMENT_ID}="name-id">Mug</h1>
+      <section id="backup-cart">Lightning deal cart</section>
+      <section id="primary-cart">Primary cart</section>
+    `;
+    const backupCart = document.querySelector<HTMLElement>("#backup-cart")!;
+    const primaryCart = document.querySelector<HTMLElement>("#primary-cart")!;
+    const handle = applyInlineRebuild(
+      document,
+      { name: { id: "name-id", value: "Neutral mug" } },
+      {
+        source: "structural",
+        findNeutralizationTargets: () =>
+          primaryCart.isConnected
+            ? [{
+                element: backupCart,
+                action: "suppress" as const,
+                reason: "promotion" as const,
+                presentation: "hidden-container" as const,
+              }]
+            : [],
+        onRestore: vi.fn(),
+      },
+    );
+
+    expect(backupCart.getAttribute("data-dehype-suppressed")).toBe(
+      "hidden-container",
+    );
+    primaryCart.remove();
+    expect(handle.neutralizeNewElements()).toBe(0);
+    expect(backupCart.hasAttribute("data-dehype-suppressed")).toBe(false);
+    expect(handle.suppressedElementCount).toBe(0);
+    handle.restore();
+  });
+
+  it("centers and restores the adapter-provided layout root", () => {
+    document.body.innerHTML = `
+      <main id="layout-root"><h1 ${DEHYPE_ELEMENT_ID}="name-id">Mug</h1></main>
+    `;
+    const layoutRoot = document.querySelector<HTMLElement>("#layout-root")!;
+    const handle = applyInlineRebuild(
+      document,
+      { name: { id: "name-id", value: "Neutral mug" } },
+      {
+        source: "structural",
+        findNeutralizationTargets: () => [],
+        neutralLayoutRoot: layoutRoot,
+        onRestore: vi.fn(),
+      },
+    );
+
+    expect(layoutRoot.getAttribute("data-dehype-layout-root")).toBe("true");
+    expect(document.querySelector("#dehype-inline-rebuild-style")?.textContent)
+      .toContain("margin-inline: auto !important");
+    handle.restore();
+    expect(layoutRoot.hasAttribute("data-dehype-layout-root")).toBe(false);
+  });
+
   it("exposes a keyboard-operable page restore control", () => {
     document.body.innerHTML = `<h1 ${DEHYPE_ELEMENT_ID}="name-id">Mug</h1>`;
     const onRestore = vi.fn();
     const handle = applyInlineRebuild(
       document,
       { name: { id: "name-id", value: "Neutral mug" } },
-      { source: "local", findNeutralizationTargets: () => [], onRestore },
+      { source: "structural", findNeutralizationTargets: () => [], onRestore },
     );
     const host = document.querySelector<HTMLElement>("#dehype-inline-rebuild-control");
     const button = host?.shadowRoot?.querySelector<HTMLButtonElement>("button");
@@ -169,7 +228,7 @@ describe("inline page rebuilder", () => {
         currentPrice: { id: "current-id", value: "Estimated CA$4.64" },
         discount: { id: "discount-id", value: "48% OFF" },
       },
-      { source: "local", findNeutralizationTargets: () => [], onRestore: vi.fn() },
+      { source: "structural", findNeutralizationTargets: () => [], onRestore: vi.fn() },
     );
 
     const summary = document.querySelector<HTMLElement>(
@@ -205,7 +264,7 @@ describe("inline page rebuilder", () => {
       document,
       { name: { id: "metadata-only", value: "Pliers" } },
       {
-        source: "local",
+        source: "structural",
         findNeutralizationTargets: () => [
           {
             element: card,

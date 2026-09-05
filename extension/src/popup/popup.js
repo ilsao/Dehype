@@ -11,8 +11,6 @@ import { sendMessageToActiveTab } from "./popupActions.js";
 
 const closeButton = document.querySelector("#close-btn");
 const settingsForm = document.querySelector("#settings-form");
-const modeInput = document.querySelector("#analysis-mode");
-const remoteSettings = document.querySelector("#remote-settings");
 const providerInput = document.querySelector("#provider");
 const modelInput = document.querySelector("#model");
 const apiKeyInput = document.querySelector("#api-key");
@@ -27,7 +25,6 @@ const statusText = document.querySelector("#status-text");
 let previousProvider = providerInput.value;
 
 closeButton.addEventListener("click", () => window.close());
-modeInput.addEventListener("change", updateModeVisibility);
 providerInput.addEventListener("change", () => {
   const previousDefault = defaultModelForProvider(previousProvider);
   if (!modelInput.value.trim() || modelInput.value === previousDefault) {
@@ -54,7 +51,7 @@ neutralizeButton.addEventListener("click", async () => {
   clearStatus();
 
   try {
-    await saveCurrentSettings();
+    await saveCurrentSettings({ allowStructuralFallback: true });
     await sendMessageToActiveTab(
       chrome.tabs,
       { type: "DEHYPE_REBUILD_CURRENT_PRODUCT" },
@@ -95,7 +92,6 @@ async function loadSavedSettings() {
 
   try {
     const settings = await loadAiSettings(chrome.storage.local);
-    modeInput.value = settings.mode;
     if (settings.provider) {
       providerInput.value = settings.provider;
       previousProvider = settings.provider;
@@ -103,51 +99,58 @@ async function loadSavedSettings() {
     if (settings.model) modelInput.value = settings.model;
     if (settings.apiKey) apiKeyInput.value = settings.apiKey;
     consentInput.checked =
-      settings.mode === "remote" &&
+      settings.state === "remote" &&
       settings.consentVersion === AI_REMOTE_CONSENT_VERSION;
-    updateModeVisibility();
     clearStatus();
   } catch (error) {
     setStatus(errorMessage(error), "error");
   }
 }
 
-async function saveCurrentSettings() {
-  const remote = modeInput.value === "remote";
+async function saveCurrentSettings({ allowStructuralFallback = false } = {}) {
   const value = {
     version: AI_SETTINGS_VERSION,
-    mode: remote ? "remote" : "local",
+    state: "remote",
     provider: providerInput.value,
     model: modelInput.value,
     apiKey: apiKeyInput.value,
   };
 
-  if (remote) {
-    if (!consentInput.checked) {
-      throw new Error("Confirm consent before enabling AI analysis.");
+  const hasCredentials =
+    modelInput.value.trim().length > 0 && apiKeyInput.value.trim().length > 0;
+  if (!consentInput.checked || !hasCredentials) {
+    if (allowStructuralFallback) {
+      await revokeUnusedProviderPermissions(chrome.permissions);
+      return saveAiSettings(chrome.storage.local, {
+        version: AI_SETTINGS_VERSION,
+        state: "unconfigured",
+        provider: providerInput.value,
+        model: modelInput.value,
+        apiKey: apiKeyInput.value,
+      });
     }
-    const granted = await requestProviderPermission(
-      chrome.permissions,
-      providerInput.value,
-    );
-    if (!granted) {
-      throw new Error("Provider access was not granted. On-device mode is unchanged.");
-    }
-    await revokeUnusedProviderPermissions(chrome.permissions, providerInput.value);
-    value.consentVersion = AI_REMOTE_CONSENT_VERSION;
-  } else {
-    await revokeUnusedProviderPermissions(chrome.permissions);
+    throw new Error("Confirm consent before enabling AI analysis.");
   }
+  const granted = await requestProviderPermission(
+    chrome.permissions,
+    providerInput.value,
+  );
+  if (!granted) {
+    if (allowStructuralFallback) {
+      return saveAiSettings(chrome.storage.local, {
+        version: AI_SETTINGS_VERSION,
+        state: "unconfigured",
+        provider: providerInput.value,
+        model: modelInput.value,
+        apiKey: apiKeyInput.value,
+      });
+    }
+    throw new Error("Provider access was not granted. Structural cleanup remains available.");
+  }
+  await revokeUnusedProviderPermissions(chrome.permissions, providerInput.value);
+  value.consentVersion = AI_REMOTE_CONSENT_VERSION;
 
   return saveAiSettings(chrome.storage.local, value);
-}
-
-function updateModeVisibility() {
-  const remote = modeInput.value === "remote";
-  remoteSettings.hidden = !remote;
-  for (const input of remoteSettings.querySelectorAll("input, select")) {
-    input.disabled = !remote;
-  }
 }
 
 function setButtonsDisabled(disabled) {

@@ -1,6 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { AI_REMOTE_CONSENT_VERSION, AI_SETTINGS_KEY } from "../shared/aiSettings.js";
+import {
+  AI_REMOTE_CONSENT_VERSION,
+  AI_SETTINGS_KEY,
+  AI_SETTINGS_VERSION,
+} from "../shared/aiSettings.js";
 import { neutralizeWithSavedSettings } from "./background.js";
 
 const productValues = {
@@ -18,16 +22,17 @@ function storage(settings) {
 }
 
 describe("background neutralization coordinator", () => {
-  it("works locally without any AI settings", async () => {
+  it("preserves original values for structural cleanup without AI settings", async () => {
     await expect(
       neutralizeWithSavedSettings(productValues, { storage: storage() }),
     ).resolves.toEqual({
       productValues: {
-        name: "Wireless Earbuds",
-        currentPrice: "$12.99",
-        stockAmount: "Listed stock quantity: 3",
+        name: "HOT SALE Wireless Earbuds!",
+        currentPrice: "$12.99 today only",
+        stockAmount: "Only 3 left",
       },
-      source: "local",
+      source: "structural",
+      fallbackReason: "Configure and consent to an AI provider to analyze product wording.",
     });
   });
 
@@ -39,8 +44,8 @@ describe("background neutralization coordinator", () => {
     await expect(
       neutralizeWithSavedSettings(productValues, {
         storage: storage({
-          version: 1,
-          mode: "remote",
+          version: AI_SETTINGS_VERSION,
+          state: "remote",
           provider: "openai",
           model: "gpt-test",
           apiKey: "key",
@@ -51,8 +56,8 @@ describe("background neutralization coordinator", () => {
     ).resolves.toEqual({
       productValues: {
         name: "Wireless Earbuds",
-        currentPrice: "$12.99",
-        stockAmount: "Listed stock quantity: 3",
+        currentPrice: "$12.99 today only",
+        stockAmount: "Only 3 left",
       },
       source: "model",
     });
@@ -78,8 +83,8 @@ describe("background neutralization coordinator", () => {
     }));
     const result = await neutralizeWithSavedSettings(factualValues, {
       storage: storage({
-        version: 1,
-        mode: "remote",
+        version: AI_SETTINGS_VERSION,
+        state: "remote",
         provider: "openai",
         model: "gpt-test",
         apiKey: "key",
@@ -95,15 +100,15 @@ describe("background neutralization coordinator", () => {
     });
   });
 
-  it("falls back to local rules when a model response is malformed", async () => {
+  it("falls back to unchanged values when a model response is malformed", async () => {
     const fetchImpl = vi.fn(async () => ({
       ok: true,
       json: async () => ({ output_text: "not json" }),
     }));
     const result = await neutralizeWithSavedSettings(productValues, {
       storage: storage({
-        version: 1,
-        mode: "remote",
+        version: AI_SETTINGS_VERSION,
+        state: "remote",
         provider: "openai",
         model: "gpt-test",
         apiKey: "key",
@@ -113,10 +118,11 @@ describe("background neutralization coordinator", () => {
     });
     expect(result).toMatchObject({
       productValues: {
-        name: "Wireless Earbuds",
-        currentPrice: "$12.99",
+        name: "HOT SALE Wireless Earbuds!",
+        currentPrice: "$12.99 today only",
+        stockAmount: "Only 3 left",
       },
-      source: "local",
+      source: "structural",
     });
     expect(result.fallbackReason).toContain("invalid JSON");
   });
