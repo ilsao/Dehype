@@ -23,7 +23,7 @@ Dehype 從四個面向優化使用者的選購流程：
 
 ![Dehype Architecture](./img/architecture.png)
 
-``` plain text
+``` plaintext
 ```text
 Dehype/
 ├── AGENTS.md                               # 產品原則、MVP 範圍與架構規範
