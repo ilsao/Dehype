@@ -40,6 +40,7 @@ export interface DecisionEvent {
   elemId?: string;
   leftAt?: number;
   durationMs?: number;
+  tabId?: number;
 }
 
 export interface DecisionSession {
@@ -191,6 +192,7 @@ function isDecisionEventValue(value: unknown): value is DecisionEvent {
       "CHECKOUT",
     ].includes(value.action) &&
     (value.productId === undefined || typeof value.productId === "string") &&
+    (value.tabId === undefined || typeof value.tabId === "number") &&
     (value.product === undefined || isRecord(value.product))
   );
 }
