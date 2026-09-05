@@ -20,16 +20,23 @@ export async function analyzeDecisionReplay(
     dependencies.storage ?? chrome.storage.local,
   );
   if (settings.state !== "remote" || settings.provider !== "gemini") {
+    const hasGeminiCredentials =
+      settings.provider === "gemini" && Boolean(settings.model && settings.apiKey);
     return {
       ok: false,
       payload,
-      message: "Configure Gemini with consent to analyze this replay.",
+      message: hasGeminiCredentials
+        ? "Gemini is configured, but remote consent is not enabled. Open Dehype settings, enable consent, and save settings."
+        : "Configure Gemini, enter a model and API key, enable remote consent, and save settings.",
     };
   }
 
   try {
+    const modelPath = settings.model.startsWith("models/")
+      ? settings.model
+      : `models/${settings.model}`;
     const response = await (dependencies.fetchImpl ?? fetch)(
-      `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(settings.model)}:generateContent`,
+      `https://generativelanguage.googleapis.com/v1beta/${encodeURI(modelPath)}:generateContent`,
       {
         method: "POST",
         headers: {

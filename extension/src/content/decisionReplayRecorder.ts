@@ -191,13 +191,17 @@ export class DecisionReplayRecorder {
       return;
     }
 
-    if (!this.activeView) return;
     const action = actionForElement(target);
     if (!action) return;
     const elemId = elementId(target);
     this.emit(
       createDecisionEvent(action, this.now(), {
-        productId: this.activeView.productId,
+        ...(this.activeView?.productId
+          ? { productId: this.activeView.productId }
+          : {}),
+        ...(this.activeView?.snapshot
+          ? { product: this.activeView.snapshot }
+          : {}),
         ...(elemId ? { elemId } : {}),
       }),
     );
