@@ -32,10 +32,15 @@ import {
   selectRandomProducts,
   summarizePrices,
 } from "../shared/priceComparison";
+import { DecisionReplayRecorder } from "./decisionReplayRecorder";
 
 const productAdapter = new TemuProductAdapter();
 const searchAdapter = new TemuSearchAdapter();
 const SEARCH_STATE_KEY = "dehype-price-search-state";
+const decisionReplayRecorder = new DecisionReplayRecorder({
+  document,
+  adapter: productAdapter,
+});
 const EXTRACTION_TIMEOUT_MS = 1_500;
 const EXTRACTION_DEBOUNCE_MS = 75;
 const NEED_MATCH_TRIGGER_DEBOUNCE_MS = 250;
@@ -623,6 +628,9 @@ function errorResponse(
 ): ContentScriptErrorResponse {
   return { type: "DEHYPE_CONTENT_SCRIPT_ERROR", operation, message };
 }
+
+if (typeof chrome !== "undefined" && chrome.runtime?.onMessage) 
+  decisionReplayRecorder.start();
 
 if (
   typeof chrome !== "undefined" &&

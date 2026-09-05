@@ -11,6 +11,7 @@ const builtManifest = JSON.parse(
 );
 
 const requiredPermissions = ["activeTab", "scripting", "storage", "sidePanel"];
+const forbiddenPermissions = [];
 const temuHosts = ["https://temu.com/*", "https://*.temu.com/*"];
 const providerHosts = [
   "https://api.openai.com/*",
