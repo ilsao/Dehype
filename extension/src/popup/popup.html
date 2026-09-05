@@ -17,27 +17,33 @@
       </header>
 
       <form id="settings-form">
-        <div class="field-row">
-          <label for="provider">AI provider</label>
-          <select id="provider" name="provider">
-            <option value="openai">ChatGPT / OpenAI</option>
-            <option value="gemini">Gemini</option>
-            <option value="claude">Claude</option>
-          </select>
-        </div>
+        <div id="remote-settings">
+          <div class="field-row">
+            <label for="provider">AI provider</label>
+            <select id="provider" name="provider">
+              <option value="openai">ChatGPT / OpenAI</option>
+              <option value="gemini">Gemini</option>
+              <option value="claude">Claude</option>
+            </select>
+          </div>
 
-        <div class="field-row">
-          <label for="model">Model</label>
-          <input id="model" name="model" type="text" autocomplete="off" value="gpt-4.1-mini">
-        </div>
+          <div class="field-row">
+            <label for="model">Model</label>
+            <input id="model" name="model" type="text" autocomplete="off" value="gpt-4.1-mini">
+          </div>
 
-        <div class="field-row">
-          <label for="api-key">API key</label>
-          <input id="api-key" name="apiKey" type="password" autocomplete="off" placeholder="Enter your API key">
+          <div class="field-row">
+            <label for="api-key">API key</label>
+            <input id="api-key" name="apiKey" type="password" autocomplete="off" placeholder="Enter your API key">
+          </div>
+          <label id="consent-row">
+            <input id="remote-consent" type="checkbox">
+            <span>Send only the extracted product values shown below to this provider. No page HTML, account, or checkout data is sent.</span>
+          </label>
         </div>
 
         <button id="save-btn" class="secondary-button" type="submit">Save settings</button>
-        <p class="storage-note">Stored locally in this Chrome profile.</p>
+        <p class="storage-note">Settings stay in this Chrome profile. If AI is unavailable, Dehype applies structural cleanup without rewriting product facts.</p>
       </form>
 
       <div id="button-row">
@@ -45,14 +51,9 @@
         <button id="restore-btn" class="action-button secondary-button" type="button">Restore</button>
       </div>
 
-      <section id="model-result" hidden>
-        <h2>Model answer</h2>
-        <pre id="model-output"></pre>
-      </section>
-
-      <div id="status-row" role="status" aria-live="polite">
+      <div id="status-row" role="status" aria-live="polite" hidden>
         <span id="status-indicator" class="status-neutral"></span>
-        <span id="status-text">Enter and save your AI settings.</span>
+        <span id="status-text"></span>
       </div>
     </main>
     <script type="module" src="popup.js"></script>

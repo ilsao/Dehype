@@ -7,6 +7,10 @@ import type {
   ProductInfo,
 } from "./productInfo";
 import {
+  isContentScriptRequest,
+  isNeutralizeProductValuesResponse,
+  isNeutralizeProductValuesRequest,
+  isRebuildCurrentProductResponse,
   mergeNeutralizedValuesIntoProductInfo,
   toValueOnlyProductInfo,
 } from "./productInfo";
@@ -42,6 +46,70 @@ describe("ProductInfo contract", () => {
     expectTypeOf<ProductElement["id"]>().toEqualTypeOf<string>();
     expectTypeOf<ProductElement["value"]>().toEqualTypeOf<string>();
     expectTypeOf<Record<string, never>>().not.toMatchTypeOf<ProductInfo>();
+  });
+});
+
+describe("extension message boundaries", () => {
+  it("accepts only valid value-only analysis requests", () => {
+    expect(
+      isNeutralizeProductValuesRequest({
+        type: "DEHYPE_NEUTRALIZE_VALUES",
+        productValues: { name: "Product", currentPrice: "NT$429" },
+      }),
+    ).toBe(true);
+    expect(
+      isNeutralizeProductValuesRequest({
+        type: "DEHYPE_NEUTRALIZE_VALUES",
+        productValues: { name: "Product", id: "dom-node" },
+      }),
+    ).toBe(false);
+  });
+
+  it("validates content requests and typed rebuild responses", () => {
+    expect(
+      isContentScriptRequest({ type: "DEHYPE_RESTORE_CURRENT_PRODUCT" }),
+    ).toBe(true);
+    expect(
+      isRebuildCurrentProductResponse({
+        type: "DEHYPE_REBUILD_CURRENT_PRODUCT_RESULT",
+        productInfo: { name: { id: "name", value: "Product" } },
+        source: "structural",
+        appliedFields: ["name"],
+        suppressedElementCount: 0,
+        deemphasizedElementCount: 0,
+      }),
+    ).toBe(true);
+    expect(
+      isRebuildCurrentProductResponse({
+        type: "DEHYPE_REBUILD_CURRENT_PRODUCT_RESULT",
+        productInfo: { name: { id: "", value: "Product" } },
+        source: "unknown",
+        appliedFields: [],
+        suppressedElementCount: -1,
+        deemphasizedElementCount: -1,
+      }),
+    ).toBe(false);
+
+    expect(
+      isRebuildCurrentProductResponse({
+        type: "DEHYPE_REBUILD_CURRENT_PRODUCT_RESULT",
+        productInfo: { name: { id: "name", value: "Product" } },
+        source: "structural",
+        appliedFields: [],
+        suppressedElementCount: 0,
+        deemphasizedElementCount: 0,
+      }),
+    ).toBe(false);
+  });
+
+  it("allows a model to return only the fields it could neutralize", () => {
+    expect(
+      isNeutralizeProductValuesResponse({
+        type: "DEHYPE_NEUTRALIZE_VALUES_RESULT",
+        productValues: { discount: "20% discount listed" },
+        source: "model",
+      }),
+    ).toBe(true);
   });
 });
 

@@ -1,181 +1,256 @@
 import { TemuProductAdapter } from "../adapters/temuProductAdapter";
-import { DEHYPE_ELEMENT_ID } from "../adapters/productAdapter";
+import {
+  applyInlineRebuild,
+  type InlineRebuildHandle,
+} from "./inlineRebuilder";
 import type {
-  NeutralizeProductInfoErrorResponse,
+  ContentScriptErrorResponse,
   NeutralizeProductValuesResponse,
-  NeutralizedProductValues,
   ProductInfo,
   ProductInfoValueOnly,
+  RebuildCurrentProductResponse,
+  RestoreCurrentProductResponse,
 } from "../shared/productInfo";
 import {
-  PRODUCT_INFO_FIELDS,
+  isContentScriptRequest,
+  isNeutralizeProductInfoErrorResponse,
+  isNeutralizeProductValuesResponse,
   mergeNeutralizedValuesIntoProductInfo,
   toValueOnlyProductInfo,
 } from "../shared/productInfo";
 
 const productAdapter = new TemuProductAdapter();
+const EXTRACTION_TIMEOUT_MS = 1_500;
+const EXTRACTION_DEBOUNCE_MS = 75;
 
-type SendResponse = (response?: unknown) => void;
-
-interface RebuildCurrentProductMessage {
-  type: "DEHYPE_REBUILD_CURRENT_PRODUCT";
+interface WaitOptions {
+  timeoutMs?: number;
+  debounceMs?: number;
+  getPageUrl?: () => string;
+  observerFactory?: (
+    callback: MutationCallback,
+  ) => Pick<MutationObserver, "observe" | "disconnect">;
 }
 
-interface RestoreCurrentProductMessage {
-  type: "DEHYPE_RESTORE_CURRENT_PRODUCT";
-}
+type ContentResponse =
+  | RebuildCurrentProductResponse
+  | RestoreCurrentProductResponse
+  | ContentScriptErrorResponse;
 
-type ContentScriptMessage =
-  | RebuildCurrentProductMessage
-  | RestoreCurrentProductMessage;
-
-type NeutralizeResponse =
-  | NeutralizeProductValuesResponse
-  | NeutralizeProductInfoErrorResponse;
-
-const originalTextByElementId = new Map<string, string>();
-
-chrome.runtime.onMessage.addListener(
-  (
-    message: unknown,
-    _sender: chrome.runtime.MessageSender,
-    sendResponse: SendResponse,
-  ) => {
-    if (!isContentScriptMessage(message)) {
-      return false;
-    }
-
-    if (message.type === "DEHYPE_REBUILD_CURRENT_PRODUCT") {
-      void rebuildCurrentProduct()
-        .then(sendResponse)
-        .catch((error) =>
-          sendResponse({
-            ok: false,
-            error: error instanceof Error ? error.message : String(error),
-          }),
-        );
-      return true;
-    }
-
-    if (message.type === "DEHYPE_RESTORE_CURRENT_PRODUCT") {
-      restoreOriginalText();
-      sendResponse({ ok: true });
-    }
-
-    return false;
-  },
-);
-
-async function rebuildCurrentProduct(): Promise<{
-  ok: boolean;
-  productInfo?: ProductInfo;
-  error?: string;
-}> {
-  const productInfo = extractCurrentProduct(document, window.location.href);
-
-  if (!productInfo) {
-    return {
-      ok: false,
-      error: "No product information was found on this page.",
-    };
-  }
-
-  const valueOnlyPayloadForAi = toValueOnlyProductInfo(productInfo);
-  const neutralizedValues = await requestNeutralizedValues(valueOnlyPayloadForAi);
-  const neutralizedProductInfo = mergeNeutralizedValuesIntoProductInfo(
-    productInfo,
-    neutralizedValues,
-  );
-
-  applyProductInfoText(neutralizedProductInfo);
-
-  return {
-    ok: true,
-    productInfo: neutralizedProductInfo,
-  };
-}
+let activeRebuild: InlineRebuildHandle | undefined;
+let activeResponse: RebuildCurrentProductResponse | undefined;
+let stopNavigationMonitor: (() => void) | undefined;
 
 export function extractCurrentProduct(
   sourceDocument: Document,
   pageUrl: string = window.location.href,
 ): ProductInfo | undefined {
-  if (!productAdapter.isSupportedPage(pageUrl)) {
-    return undefined;
-  }
-
+  if (!productAdapter.isSupportedPage(pageUrl)) return undefined;
   return productAdapter.extractProductInfo(sourceDocument, pageUrl);
 }
 
-async function requestNeutralizedValues(
-  valueOnlyPayloadForAi: ProductInfoValueOnly,
-): Promise<NeutralizedProductValues> {
-  const response = (await chrome.runtime.sendMessage({
-    type: "DEHYPE_NEUTRALIZE_VALUES",
-    productValues: valueOnlyPayloadForAi,
-  })) as NeutralizeResponse;
+export async function waitForCurrentProduct(
+  sourceDocument: Document,
+  options: WaitOptions = {},
+): Promise<ProductInfo | undefined> {
+  const getPageUrl = options.getPageUrl ?? (() => window.location.href);
+  const timeoutMs = options.timeoutMs ?? EXTRACTION_TIMEOUT_MS;
+  const debounceMs = options.debounceMs ?? EXTRACTION_DEBOUNCE_MS;
+  const observerFactory =
+    options.observerFactory ??
+    ((callback: MutationCallback) => new MutationObserver(callback));
+  const firstUrl = getPageUrl();
+  if (!productAdapter.isSupportedPage(firstUrl)) return undefined;
 
-  if (response.type === "DEHYPE_NEUTRALIZE_PRODUCT_INFO_ERROR") {
-    throw new Error(response.message);
-  }
+  let latest = tryExtract(sourceDocument, firstUrl);
+  if (latest?.currentPrice) return latest;
 
-  return response.productValues;
+  return new Promise((resolve) => {
+    let debounceTimer: number | undefined;
+    let settled = false;
+    const finish = (product: ProductInfo | undefined): void => {
+      if (settled) return;
+      settled = true;
+      observer.disconnect();
+      window.clearTimeout(timeoutTimer);
+      if (debounceTimer !== undefined) window.clearTimeout(debounceTimer);
+      resolve(product);
+    };
+    const check = (): void => {
+      const url = getPageUrl();
+      if (!productAdapter.isSupportedPage(url)) {
+        finish(undefined);
+        return;
+      }
+      latest = tryExtract(sourceDocument, url) ?? latest;
+      if (latest?.currentPrice) finish(latest);
+    };
+    const observer = observerFactory(() => {
+      if (debounceTimer !== undefined) window.clearTimeout(debounceTimer);
+      debounceTimer = window.setTimeout(check, debounceMs);
+    });
+    const timeoutTimer = window.setTimeout(() => finish(latest), timeoutMs);
+
+    observer.observe(sourceDocument.documentElement, {
+      childList: true,
+      subtree: true,
+      characterData: true,
+    });
+  });
 }
 
-function applyProductInfoText(productInfo: ProductInfo): void {
-  for (const field of PRODUCT_INFO_FIELDS) {
-    if (field === "image") {
-      continue;
-    }
+export async function rebuildCurrentProduct(): Promise<ContentResponse> {
+  if (activeResponse && activeRebuild?.targetsAreConnected()) return activeResponse;
+  if (activeRebuild) restoreCurrentProduct();
 
-    const productElement = productInfo[field];
+  const productInfo = await waitForCurrentProduct(document);
+  if (!productInfo) {
+    return errorResponse(
+      "rebuild",
+      "No supported Temu product information was found on this page.",
+    );
+  }
 
-    if (!productElement) {
-      continue;
-    }
+  let pendingRebuild: InlineRebuildHandle | undefined;
+  try {
+    const neutralized = await requestNeutralizedValues(
+      toValueOnlyProductInfo(productInfo),
+    );
+    const neutralizedProductInfo = mergeNeutralizedValuesIntoProductInfo(
+      productInfo,
+      neutralized.productValues,
+    );
+    const neutralLayoutRoot = productAdapter.findNeutralLayoutRoot(document);
+    const rebuildOptions = {
+      source: neutralized.source,
+      findNeutralizationTargets: () =>
+        productAdapter.findNeutralizationTargets(document),
+      onRestore: restoreCurrentProduct,
+      ...(neutralLayoutRoot ? { neutralLayoutRoot } : {}),
+      ...(neutralized.fallbackReason
+        ? { fallbackReason: neutralized.fallbackReason }
+        : {}),
+    };
+    const rebuild = applyInlineRebuild(
+      document,
+      neutralizedProductInfo,
+      rebuildOptions,
+    );
+    pendingRebuild = rebuild;
 
-    const domElement = findDomElementByDehypeId(productElement.id);
-
-    if (!domElement) {
-      continue;
-    }
-
-    if (!originalTextByElementId.has(productElement.id)) {
-      originalTextByElementId.set(
-        productElement.id,
-        domElement.textContent ?? "",
+    if (rebuild.appliedFields.length === 0) {
+      rebuild.restore();
+      return errorResponse(
+        "rebuild",
+        "Product values were analyzed, but no visible Temu product fields could be rebuilt.",
       );
     }
 
-    domElement.textContent = productElement.value;
-  }
-}
-
-function restoreOriginalText(): void {
-  for (const [id, originalText] of originalTextByElementId.entries()) {
-    const domElement = findDomElementByDehypeId(id);
-
-    if (domElement) {
-      domElement.textContent = originalText;
+    const response: RebuildCurrentProductResponse = {
+      type: "DEHYPE_REBUILD_CURRENT_PRODUCT_RESULT",
+      productInfo: neutralizedProductInfo,
+      source: neutralized.source,
+      appliedFields: rebuild.appliedFields,
+      suppressedElementCount: rebuild.suppressedElementCount,
+      deemphasizedElementCount: rebuild.deemphasizedElementCount,
+    };
+    if (neutralized.fallbackReason) {
+      response.fallbackReason = neutralized.fallbackReason;
     }
+    activeRebuild = rebuild;
+    activeResponse = response;
+    startNavigationMonitor(window.location.href);
+    pendingRebuild = undefined;
+    return response;
+  } catch (error) {
+    pendingRebuild?.restore();
+    return errorResponse(
+      "rebuild",
+      error instanceof Error ? error.message : String(error),
+    );
+  }
+}
+
+export function restoreCurrentProduct(): RestoreCurrentProductResponse {
+  activeRebuild?.restore();
+  activeRebuild = undefined;
+  activeResponse = undefined;
+  stopNavigationMonitor?.();
+  stopNavigationMonitor = undefined;
+  return { type: "DEHYPE_RESTORE_CURRENT_PRODUCT_RESULT" };
+}
+
+export function handleContentMessage(
+  message: unknown,
+  sendResponse: (response: ContentResponse) => void,
+): boolean {
+  if (!isContentScriptRequest(message)) return false;
+
+  if (message.type === "DEHYPE_RESTORE_CURRENT_PRODUCT") {
+    sendResponse(restoreCurrentProduct());
+    return false;
   }
 
-  originalTextByElementId.clear();
+  void rebuildCurrentProduct().then(sendResponse);
+  return true;
 }
 
-function findDomElementByDehypeId(id: string): HTMLElement | null {
-  return document.querySelector<HTMLElement>(
-    `[${DEHYPE_ELEMENT_ID}="${CSS.escape(id)}"]`,
-  );
+function tryExtract(sourceDocument: Document, pageUrl: string): ProductInfo | undefined {
+  try {
+    return extractCurrentProduct(sourceDocument, pageUrl);
+  } catch {
+    return undefined;
+  }
 }
 
-function isContentScriptMessage(
-  message: unknown,
-): message is ContentScriptMessage {
-  return (
-    typeof message === "object" &&
-    message !== null &&
-    "type" in message &&
-    (message.type === "DEHYPE_REBUILD_CURRENT_PRODUCT" ||
-      message.type === "DEHYPE_RESTORE_CURRENT_PRODUCT")
+async function requestNeutralizedValues(
+  productValues: ProductInfoValueOnly,
+): Promise<NeutralizeProductValuesResponse> {
+  const response: unknown = await chrome.runtime.sendMessage({
+    type: "DEHYPE_NEUTRALIZE_VALUES",
+    productValues,
+  });
+
+  if (isNeutralizeProductValuesResponse(response)) return response;
+  if (isNeutralizeProductInfoErrorResponse(response)) {
+    throw new Error(response.message);
+  }
+  throw new Error("The analysis service returned an invalid response.");
+}
+
+function startNavigationMonitor(pageUrl: string): void {
+  stopNavigationMonitor?.();
+  const checkUrl = (): void => {
+    if (
+      window.location.href !== pageUrl ||
+      !activeRebuild?.targetsAreConnected()
+    ) {
+      restoreCurrentProduct();
+      return;
+    }
+    activeRebuild.neutralizeNewElements();
+  };
+  const observer = new MutationObserver(checkUrl);
+  observer.observe(document.documentElement, { childList: true, subtree: true });
+  window.addEventListener("popstate", checkUrl);
+  window.addEventListener("hashchange", checkUrl);
+  stopNavigationMonitor = () => {
+    observer.disconnect();
+    window.removeEventListener("popstate", checkUrl);
+    window.removeEventListener("hashchange", checkUrl);
+  };
+}
+
+function errorResponse(
+  operation: "rebuild" | "restore",
+  message: string,
+): ContentScriptErrorResponse {
+  return { type: "DEHYPE_CONTENT_SCRIPT_ERROR", operation, message };
+}
+
+if (typeof chrome !== "undefined" && chrome.runtime?.onMessage) {
+  chrome.runtime.onMessage.addListener(
+    (message: unknown, _sender, sendResponse): boolean =>
+      handleContentMessage(message, sendResponse),
   );
 }

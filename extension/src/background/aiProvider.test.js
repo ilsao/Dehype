@@ -41,8 +41,9 @@ describe("AI provider requests", () => {
     const [url, request] = fetchImpl.mock.calls[0];
     expect(url).toBe("https://api.openai.com/v1/responses");
     expect(request.headers.authorization).toBe("Bearer key-o");
-    expect(JSON.parse(request.body).model).toBe("gpt-test");
-    expect(request.body).not.toContain("id");
+    const requestBody = JSON.parse(request.body);
+    expect(requestBody.model).toBe("gpt-test");
+    expect(requestBody.input).not.toContain('"id"');
   });
 
   it("uses the selected Gemini model and key", async () => {

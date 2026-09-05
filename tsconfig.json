@@ -18,6 +18,12 @@
     "moduleDetection": "force",
     "skipLibCheck": true
   },
-  "include": ["extension/src", "vite.config.ts", "vitest.config.ts", "tests"],
+  "include": [
+    "extension/src",
+    "vite.config.ts",
+    "vite.content.config.ts",
+    "vitest.config.ts",
+    "tests"
+  ],
   "exclude": ["node_modules", "dist"]
 }
