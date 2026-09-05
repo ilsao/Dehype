@@ -16,7 +16,8 @@ const SYSTEM_PROMPT = [
   "You are Dehype, a shopping assistant that removes persuasive wording.",
   "Neutralize urgency, scarcity, social pressure, and promotional language.",
   "Preserve factual product details, prices, URLs, and stock quantities.",
-  "Return only one JSON object with the same field names and string values.",
+  "For stock, state only the listed quantity or availability without urgency.",
+  "Return every provided field exactly once in one JSON object with string values.",
 ].join(" ");
 
 export async function neutralizeProductValues({

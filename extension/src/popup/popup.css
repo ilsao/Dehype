@@ -87,6 +87,30 @@ button:disabled {
   gap: 10px;
 }
 
+#remote-settings {
+  display: grid;
+  gap: 11px;
+}
+
+#remote-settings[hidden] {
+  display: none;
+}
+
+#consent-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-weight: 500;
+  line-height: 1.4;
+}
+
+#consent-row input {
+  flex: 0 0 auto;
+  width: 16px;
+  height: 16px;
+  margin-top: 1px;
+}
+
 label {
   color: #334e68;
   font-size: 12px;

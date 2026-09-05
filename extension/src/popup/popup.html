@@ -18,6 +18,15 @@
 
       <form id="settings-form">
         <div class="field-row">
+          <label for="analysis-mode">Analysis</label>
+          <select id="analysis-mode" name="mode">
+            <option value="local">On-device rules</option>
+            <option value="remote">Optional AI model</option>
+          </select>
+        </div>
+
+        <div id="remote-settings" hidden>
+        <div class="field-row">
           <label for="provider">AI provider</label>
           <select id="provider" name="provider">
             <option value="openai">ChatGPT / OpenAI</option>
@@ -35,9 +44,14 @@
           <label for="api-key">API key</label>
           <input id="api-key" name="apiKey" type="password" autocomplete="off" placeholder="Enter your API key">
         </div>
+        <label id="consent-row">
+          <input id="remote-consent" type="checkbox">
+          <span>Send only the extracted product values shown below to this provider. No page HTML, account, or checkout data is sent.</span>
+        </label>
+        </div>
 
         <button id="save-btn" class="secondary-button" type="submit">Save settings</button>
-        <p class="storage-note">Stored locally in this Chrome profile.</p>
+        <p class="storage-note">Settings stay in this Chrome profile. On-device analysis works offline.</p>
       </form>
 
       <div id="button-row">
@@ -46,7 +60,7 @@
       </div>
 
       <section id="model-result" hidden>
-        <h2>Model answer</h2>
+        <h2 id="result-heading">Analysis result</h2>
         <pre id="model-output"></pre>
       </section>
 

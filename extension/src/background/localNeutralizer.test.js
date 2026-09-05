@@ -24,4 +24,18 @@ describe("local neutralizer", () => {
     expect(result).not.toHaveProperty(legacyOriginalPrice);
     expect(result).not.toHaveProperty(legacyCurrentPrice);
   });
+
+  it("neutralizes common Traditional and Simplified Chinese promotion terms", () => {
+    expect(
+      neutralizeValuesLocally({
+        name: "今日限定 熱賣陶瓷杯！",
+        description: "限时抢购 爆款陶瓷杯！",
+        stockAmount: "僅剩 3 件",
+      }),
+    ).toMatchObject({
+      name: "陶瓷杯",
+      description: "陶瓷杯",
+      stockAmount: "Listed stock quantity: 3",
+    });
+  });
 });
