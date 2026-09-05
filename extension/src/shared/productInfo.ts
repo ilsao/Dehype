@@ -48,6 +48,17 @@ export interface NeutralizeProductInfoErrorResponse {
   message: string;
 }
 
+export interface AnalyzeNeedMatchValuesRequest {
+  type: "DEHYPE_ANALYZE_NEED_MATCH_VALUES";
+  productValues: ProductInfoValueOnly;
+}
+
+export interface AnalyzeNeedMatchValuesResponse {
+  type: "DEHYPE_ANALYZE_NEED_MATCH_VALUES_RESULT";
+  ok: boolean;
+  message?: string;
+}
+
 export interface RebuildCurrentProductRequest {
   type: "DEHYPE_REBUILD_CURRENT_PRODUCT";
 }
@@ -80,6 +91,8 @@ export type ExtensionMessage =
   | NeutralizeProductValuesRequest
   | NeutralizeProductValuesResponse
   | NeutralizeProductInfoErrorResponse
+  | AnalyzeNeedMatchValuesRequest
+  | AnalyzeNeedMatchValuesResponse
   | RebuildCurrentProductRequest
   | RestoreCurrentProductRequest
   | RebuildCurrentProductResponse
@@ -182,6 +195,16 @@ export function isNeutralizeProductInfoErrorResponse(
     value.type === "DEHYPE_NEUTRALIZE_PRODUCT_INFO_ERROR" &&
     typeof value.message === "string" &&
     value.message.length > 0
+  );
+}
+
+export function isAnalyzeNeedMatchValuesRequest(
+  value: unknown,
+): value is AnalyzeNeedMatchValuesRequest {
+  return (
+    isRecord(value) &&
+    value.type === "DEHYPE_ANALYZE_NEED_MATCH_VALUES" &&
+    isProductInfoValueOnly(value.productValues)
   );
 }
 

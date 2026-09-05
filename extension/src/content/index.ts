@@ -18,10 +18,16 @@ import {
   mergeNeutralizedValuesIntoProductInfo,
   toValueOnlyProductInfo,
 } from "../shared/productInfo";
+import {
+  loadUserNeed,
+  USER_NEED_STORAGE_KEY,
+  type UserNeed,
+} from "../shared/userNeed";
 
 const productAdapter = new TemuProductAdapter();
 const EXTRACTION_TIMEOUT_MS = 1_500;
 const EXTRACTION_DEBOUNCE_MS = 75;
+const NEED_MATCH_TRIGGER_DEBOUNCE_MS = 250;
 
 interface WaitOptions {
   timeoutMs?: number;
@@ -40,6 +46,10 @@ type ContentResponse =
 let activeRebuild: InlineRebuildHandle | undefined;
 let activeResponse: RebuildCurrentProductResponse | undefined;
 let stopNavigationMonitor: (() => void) | undefined;
+let pendingNeedMatchTimer: number | undefined;
+let lastNeedMatchSignature = "";
+let lastObservedUrl =
+  typeof window !== "undefined" ? window.location.href : "";
 
 export function extractCurrentProduct(
   sourceDocument: Document,
@@ -107,7 +117,7 @@ export async function rebuildCurrentProduct(): Promise<ContentResponse> {
   if (!productInfo) {
     return errorResponse(
       "rebuild",
-      "No supported Temu product information was found on this page.",
+      "Open a supported Temu product detail page and try again.",
     );
   }
 
@@ -180,6 +190,31 @@ export function restoreCurrentProduct(): RestoreCurrentProductResponse {
   return { type: "DEHYPE_RESTORE_CURRENT_PRODUCT_RESULT" };
 }
 
+export async function analyzeCurrentProductNeedMatch(
+  options: WaitOptions = {},
+): Promise<boolean> {
+  const userNeed = await loadCurrentUserNeed();
+  if (!userNeed) return false;
+
+  const productInfo = await waitForCurrentProduct(document, options);
+  if (!productInfo) return false;
+
+  const productValues = toValueOnlyProductInfo(productInfo);
+  const signature = needMatchSignature(
+    window.location.href,
+    productValues,
+    userNeed,
+  );
+  if (signature === lastNeedMatchSignature) return false;
+
+  lastNeedMatchSignature = signature;
+  await chrome.runtime.sendMessage({
+    type: "DEHYPE_ANALYZE_NEED_MATCH_VALUES",
+    productValues,
+  });
+  return true;
+}
+
 export function handleContentMessage(
   message: unknown,
   sendResponse: (response: ContentResponse) => void,
@@ -241,6 +276,117 @@ function startNavigationMonitor(pageUrl: string): void {
   };
 }
 
+function startNeedMatchAutomation(): void {
+  if (!chrome.storage?.local || !chrome.storage.onChanged) return;
+
+  window.__dehypeStopNeedMatchAutomation?.();
+
+  const storageListener = (
+    changes: Record<string, chrome.storage.StorageChange>,
+    areaName: string,
+  ): void => {
+    if (areaName !== "local" || !(USER_NEED_STORAGE_KEY in changes)) {
+      return;
+    }
+
+    if (changes[USER_NEED_STORAGE_KEY]?.newValue === undefined) {
+      lastNeedMatchSignature = "";
+      return;
+    }
+
+    scheduleNeedMatchAnalysis();
+  };
+  chrome.storage.onChanged.addListener(storageListener);
+
+  patchHistoryNavigation();
+  window.addEventListener("popstate", handlePossibleProductNavigation);
+  window.addEventListener("hashchange", handlePossibleProductNavigation);
+  const observer = new MutationObserver(handlePossibleProductNavigation);
+  observer.observe(document.documentElement, { childList: true, subtree: true });
+  window.__dehypeStopNeedMatchAutomation = () => {
+    if (pendingNeedMatchTimer !== undefined) {
+      window.clearTimeout(pendingNeedMatchTimer);
+      pendingNeedMatchTimer = undefined;
+    }
+    observer.disconnect();
+    window.removeEventListener("popstate", handlePossibleProductNavigation);
+    window.removeEventListener("hashchange", handlePossibleProductNavigation);
+    if (typeof chrome !== "undefined") {
+      chrome.storage?.onChanged?.removeListener?.(storageListener);
+    }
+  };
+
+  if (window.__dehypeSkipInitialNeedMatch) {
+    window.__dehypeSkipInitialNeedMatch = false;
+  } else {
+    scheduleNeedMatchAnalysis();
+  }
+}
+
+function scheduleNeedMatchAnalysis(): void {
+  if (pendingNeedMatchTimer !== undefined) {
+    window.clearTimeout(pendingNeedMatchTimer);
+  }
+
+  pendingNeedMatchTimer = window.setTimeout(() => {
+    pendingNeedMatchTimer = undefined;
+    void analyzeCurrentProductNeedMatch().catch(() => {
+      // Background stores user-visible Need Match failures when analysis starts.
+    });
+  }, NEED_MATCH_TRIGGER_DEBOUNCE_MS);
+}
+
+function handlePossibleProductNavigation(): void {
+  if (typeof window === "undefined") return;
+  if (window.location.href === lastObservedUrl) return;
+  lastObservedUrl = window.location.href;
+  restoreCurrentProduct();
+  scheduleNeedMatchAnalysis();
+}
+
+function patchHistoryNavigation(): void {
+  if (window.__dehypeNeedMatchHistoryPatched) return;
+  window.__dehypeNeedMatchHistoryPatched = true;
+
+  const originalPushState = history.pushState;
+  history.pushState = function pushState(
+    this: History,
+    data: unknown,
+    unused: string,
+    url?: string | URL | null,
+  ): void {
+    originalPushState.apply(this, [data, unused, url]);
+    handlePossibleProductNavigation();
+  };
+
+  const originalReplaceState = history.replaceState;
+  history.replaceState = function replaceState(
+    this: History,
+    data: unknown,
+    unused: string,
+    url?: string | URL | null,
+  ): void {
+    originalReplaceState.apply(this, [data, unused, url]);
+    handlePossibleProductNavigation();
+  };
+}
+
+async function loadCurrentUserNeed(): Promise<UserNeed | null> {
+  try {
+    return await loadUserNeed(chrome.storage.local);
+  } catch {
+    return null;
+  }
+}
+
+function needMatchSignature(
+  pageUrl: string,
+  productValues: ProductInfoValueOnly,
+  userNeed: UserNeed,
+): string {
+  return JSON.stringify({ pageUrl, productValues, userNeed });
+}
+
 function errorResponse(
   operation: "rebuild" | "restore",
   message: string,
@@ -248,9 +394,24 @@ function errorResponse(
   return { type: "DEHYPE_CONTENT_SCRIPT_ERROR", operation, message };
 }
 
-if (typeof chrome !== "undefined" && chrome.runtime?.onMessage) {
+if (
+  typeof chrome !== "undefined" &&
+  chrome.runtime?.onMessage &&
+  !window.__dehypeContentScriptInitialized
+) {
+  window.__dehypeContentScriptInitialized = true;
   chrome.runtime.onMessage.addListener(
     (message: unknown, _sender, sendResponse): boolean =>
       handleContentMessage(message, sendResponse),
   );
+  startNeedMatchAutomation();
+}
+
+declare global {
+  interface Window {
+    __dehypeContentScriptInitialized?: boolean;
+    __dehypeNeedMatchHistoryPatched?: boolean;
+    __dehypeSkipInitialNeedMatch?: boolean;
+    __dehypeStopNeedMatchAutomation?: () => void;
+  }
 }

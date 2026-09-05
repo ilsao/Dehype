@@ -5,6 +5,7 @@ import {
   AI_SETTINGS_KEY,
   AI_SETTINGS_VERSION,
   defaultModelForProvider,
+  getAiSettingsStatus,
   loadAiSettings,
   requestProviderPermission,
   revokeUnusedProviderPermissions,
@@ -12,13 +13,17 @@ import {
   validateAiSettings,
 } from "./aiSettings.js";
 
-function storageWith(initial = {}) {
-  const values = { ...initial };
+function storageWith(initial: Record<string, unknown> = {}) {
+  const values: Record<string, unknown> = { ...initial };
   return {
     values,
     get: vi.fn(async () => values),
-    set: vi.fn(async (next) => Object.assign(values, next)),
-    remove: vi.fn(async (key) => delete values[key]),
+    set: vi.fn(async (next: Record<string, unknown>) =>
+      Object.assign(values, next),
+    ),
+    remove: vi.fn(async (key: string) => {
+      delete values[key];
+    }),
   };
 }
 
@@ -52,7 +57,9 @@ describe("AI settings", () => {
       apiKey: " test-key ",
       consentVersion: AI_REMOTE_CONSENT_VERSION,
     };
+
     await saveAiSettings(storage, settings);
+
     await expect(loadAiSettings(storage)).resolves.toEqual({
       ...settings,
       model: "gemini-3.5-flash-lite",
@@ -68,6 +75,7 @@ describe("AI settings", () => {
         apiKey: "key",
       },
     });
+
     await expect(loadAiSettings(storage)).resolves.toEqual({
       version: AI_SETTINGS_VERSION,
       state: "unconfigured",
@@ -105,6 +113,7 @@ describe("AI settings", () => {
       [AI_SETTINGS_KEY]: { version: 99, mode: "remote" },
       unrelated: "preserved",
     });
+
     await expect(loadAiSettings(storage)).resolves.toEqual({
       version: AI_SETTINGS_VERSION,
       state: "unconfigured",
@@ -113,8 +122,43 @@ describe("AI settings", () => {
     expect(storage.values.unrelated).toBe("preserved");
   });
 
+  it("reports status from complete local remote settings", async () => {
+    const storage = storageWith({
+      [AI_SETTINGS_KEY]: {
+        version: AI_SETTINGS_VERSION,
+        state: "remote",
+        provider: "openai",
+        model: "gpt-test",
+        apiKey: "key",
+        consentVersion: AI_REMOTE_CONSENT_VERSION,
+      },
+    });
+
+    await expect(getAiSettingsStatus(storage)).resolves.toEqual({
+      healthy: true,
+      configured: true,
+    });
+  });
+
+  it("reports unhealthy status when settings are missing or unreadable", async () => {
+    await expect(getAiSettingsStatus(storageWith())).resolves.toEqual({
+      healthy: false,
+      configured: false,
+    });
+
+    await expect(
+      getAiSettingsStatus({
+        get: vi.fn(async () => {
+          throw new Error("storage failed");
+        }),
+        set: vi.fn(),
+      }),
+    ).resolves.toEqual({ healthy: false, configured: false });
+  });
+
   it("requests only the selected provider origin", async () => {
     const permissions = { request: vi.fn(async () => true) };
+
     await expect(
       requestProviderPermission(permissions, "claude"),
     ).resolves.toBe(true);
@@ -125,7 +169,9 @@ describe("AI settings", () => {
 
   it("removes provider grants that are not in active use", async () => {
     const permissions = { remove: vi.fn(async () => true) };
+
     await revokeUnusedProviderPermissions(permissions, "openai");
+
     expect(permissions.remove).toHaveBeenCalledWith({
       origins: [
         "https://generativelanguage.googleapis.com/*",
