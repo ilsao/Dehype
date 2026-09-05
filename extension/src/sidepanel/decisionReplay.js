@@ -3,6 +3,7 @@ import "./decisionReplay.css";
 const timeline = document.querySelector("#timeline");
 const products = document.querySelector("#products");
 const analysis = document.querySelector("#analysis");
+const configureGeminiButton = document.querySelector("#configure-gemini");
 const meta = document.querySelector("#session-meta");
 const budget = document.querySelector("#budget");
 let session;
@@ -18,8 +19,25 @@ chrome.runtime.onMessage.addListener((message) => {
 
 document.querySelector("#analyze").addEventListener("click", async () => {
   setAnalysisMessage("Analyzing the local replay...");
-  const response = await chrome.runtime.sendMessage({ type: "DEHYPE_REPLAY_ANALYZE" });
-  renderAnalysis(response?.result);
+  configureGeminiButton.hidden = true;
+  try {
+    const response = await chrome.runtime.sendMessage({ type: "DEHYPE_REPLAY_ANALYZE" });
+    renderAnalysis(response?.result);
+  } catch (error) {
+    setAnalysisMessage(
+      error instanceof Error
+        ? error.message
+        : "Replay analysis could not be started.",
+    );
+  }
+});
+
+configureGeminiButton.addEventListener("click", async () => {
+  try {
+    await chrome.action.openPopup();
+  } catch {
+    setAnalysisMessage("Open the Dehype toolbar popup to configure Gemini.");
+  }
 });
 
 document.querySelector("#reset").addEventListener("click", async () => {
@@ -90,13 +108,22 @@ function renderProducts() {
   for (const product of byProduct.values()) {
     const row = document.createElement("div");
     row.className = "product-row";
-    row.innerHTML = `<span class="product-name">${escapeHtml(product.name)}</span><span class="product-price">${escapeHtml(product.currentPrice ?? "")}</span><span class="duration">${formatDuration(product.durationMs)}</span>`;
+    const facts = [product.discount, product.stockAmount]
+      .filter(Boolean)
+      .map((value) => escapeHtml(value))
+      .join(" · ");
+    row.innerHTML = `<span class="product-name">${escapeHtml(product.name)}${facts ? `<small>${facts}</small>` : ""}</span><span class="product-price">${escapeHtml(product.currentPrice ?? "")}</span><span class="duration">${formatDuration(product.durationMs)}</span>`;
     products.append(row);
   }
 }
 
 function renderAnalysis(result) {
-  if (!result?.ok) { setAnalysisMessage(result?.message ?? "Analysis unavailable. Replay collection continues."); return; }
+  if (!result?.ok) {
+    setAnalysisMessage(result?.message ?? "Analysis unavailable. Replay collection continues.");
+    configureGeminiButton.hidden = false;
+    return;
+  }
+  configureGeminiButton.hidden = true;
   analysis.replaceChildren();
   for (const [title, values] of Object.entries(result.analysis ?? {})) {
     const group = document.createElement("div");
