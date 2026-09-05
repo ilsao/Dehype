@@ -231,7 +231,11 @@ function startNavigationMonitor(pageUrl: string): void {
     activeRebuild.neutralizeNewElements();
   };
   const observer = new MutationObserver(checkUrl);
-  observer.observe(document.documentElement, { childList: true, subtree: true });
+  observer.observe(document.documentElement, {
+    childList: true,
+    subtree: true,
+    characterData: true,
+  });
   window.addEventListener("popstate", checkUrl);
   window.addEventListener("hashchange", checkUrl);
   stopNavigationMonitor = () => {

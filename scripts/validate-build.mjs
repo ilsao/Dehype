@@ -67,6 +67,17 @@ await Promise.all(
   expectedFiles.map((file) => access(resolve(outputRoot, file.replace(/^\.\//, "")))),
 );
 
+const popupHtmlPath = resolve(
+  outputRoot,
+  builtManifest.action.default_popup.replace(/^\.\//, ""),
+);
+const popupHtml = await readFile(popupHtmlPath, "utf8");
+if (/rel=["']modulepreload["']/i.test(popupHtml)) {
+  throw new Error(
+    "Built popup must not preload extension module chunks across Chrome worlds.",
+  );
+}
+
 if (
   builtManifest.content_scripts.some((entry) =>
     entry.js.some((file) => /\.(?:ts|tsx)$/.test(file)),

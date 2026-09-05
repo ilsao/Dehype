@@ -132,6 +132,86 @@ describe("content-script integration", () => {
     expect(document.querySelector("[data-dehype-suppressed]")).toBeNull();
   });
 
+  it("suppresses a sale heading container and a promotional cart control added by text update", async () => {
+    document.body.innerHTML = `
+      <main>
+        <h1 class="_25g_jM0z">Olive oil dispenser</h1>
+        <div data-testid="current-price">$12.99</div>
+        <div id="rightContent">
+          <div id="sale-heading"><div><span>BIG SALE</span></div></div>
+          <button id="primary-cart">Add to cart</button>
+          <div id="dynamic-cart" role="button"><span>Arrives soon</span></div>
+        </div>
+      </main>
+    `;
+
+    await rebuildCurrentProduct();
+    expect(document.querySelector("#sale-heading")?.getAttribute(
+      "data-dehype-suppressed",
+    )).toBe("hidden-container");
+    expect(document.querySelector("#dynamic-cart")?.hasAttribute(
+      "data-dehype-suppressed",
+    )).toBe(false);
+
+    document.querySelector("#dynamic-cart span")!.textContent =
+      "-63% now! Add to cart!";
+    await vi.waitFor(() =>
+      expect(document.querySelector("#dynamic-cart")?.getAttribute(
+        "data-dehype-suppressed",
+      )).toBe("hidden-container"),
+    );
+
+    restoreCurrentProduct();
+    expect(document.querySelector("#sale-heading")?.hasAttribute(
+      "data-dehype-suppressed",
+    )).toBe(false);
+    expect(document.querySelector("#dynamic-cart")?.hasAttribute(
+      "data-dehype-suppressed",
+    )).toBe(false);
+  });
+
+  it("suppresses a dynamically inserted duplicate cart summary and restores it", async () => {
+    document.body.innerHTML = `
+      <main>
+        <h1 class="_25g_jM0z">Olive oil dispenser</h1>
+        <div data-testid="current-price">$12.99</div>
+        <div id="rightContent">
+          <section id="lower-cart-row">
+            <button aria-label="decrease quantity"></button>
+            <button aria-label="increase quantity"></button>
+            <div role="button">Go to cart</div>
+          </section>
+        </div>
+      </main>
+    `;
+
+    await rebuildCurrentProduct();
+    document.querySelector("#rightContent")!.insertAdjacentHTML(
+      "afterbegin",
+      `
+        <section id="upper-cart-summary">
+          <span>Added: 2</span>
+          <label>Qty <select><option>1</option></select></label>
+          <div role="button">Go to cart</div>
+        </section>
+      `,
+    );
+
+    await vi.waitFor(() =>
+      expect(document.querySelector("#upper-cart-summary")?.getAttribute(
+        "data-dehype-suppressed",
+      )).toBe("hidden-container"),
+    );
+    expect(document.querySelector("#lower-cart-row")?.hasAttribute(
+      "data-dehype-suppressed",
+    )).toBe(false);
+
+    restoreCurrentProduct();
+    expect(document.querySelector("#upper-cart-summary")?.hasAttribute(
+      "data-dehype-suppressed",
+    )).toBe(false);
+  });
+
   it("returns an error when analysis has no visible DOM target", async () => {
     vi.useFakeTimers();
     document.body.innerHTML = "";
