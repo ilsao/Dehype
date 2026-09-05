@@ -639,8 +639,23 @@ if (
 ) {
   window.__dehypeContentScriptInitialized = true;
   chrome.runtime.onMessage.addListener(
-    (message: unknown, _sender, sendResponse): boolean =>
-      handleContentMessage(message, sendResponse),
+    (message: unknown, _sender, sendResponse): boolean => {
+      if (
+        typeof message === "object" &&
+        message !== null &&
+        "type" in message &&
+        message.type === "DEHYPE_REPLAY_STOP_VIEW"
+      ) {
+        const leftAt =
+          "leftAt" in message && typeof message.leftAt === "number"
+            ? message.leftAt
+            : undefined;
+        decisionReplayRecorder.stopActiveView(leftAt);
+        sendResponse({ type: "DEHYPE_REPLAY_STOP_VIEW_RESULT" });
+        return false;
+      }
+      return handleContentMessage(message, sendResponse);
+    },
   );
   startNeedMatchAutomation();
   void resumeDomSearch();

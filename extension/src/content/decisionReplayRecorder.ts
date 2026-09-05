@@ -23,6 +23,7 @@ interface ActiveView {
   productId: string;
   snapshot: ReturnType<typeof productSnapshotFromInfo>;
   startedAt: number;
+  event: DecisionEvent;
 }
 
 export class DecisionReplayRecorder {
@@ -128,12 +129,22 @@ export class DecisionReplayRecorder {
       return;
     }
     this.finishActiveView(snapshot.viewedAt);
+    const event = createDecisionEvent("PRODUCT_VIEW", snapshot.viewedAt, {
+      productId: snapshot.productId,
+      product: snapshot,
+    });
     this.activeView = {
       productId: snapshot.productId,
       snapshot,
       startedAt: snapshot.viewedAt,
+      event,
     };
     this.currentUrl = url;
+    this.emit(event);
+  }
+
+  public stopActiveView(leftAt?: number): void {
+    this.finishActiveView(leftAt ?? this.now());
   }
 
   private scheduleRefresh(): void {
@@ -147,20 +158,40 @@ export class DecisionReplayRecorder {
   private finishActiveView(leftAt: number): void {
     const activeView = this.activeView;
     if (!activeView) return;
-    this.emit(
-      createDecisionEvent("PRODUCT_VIEW", activeView.startedAt, {
-        productId: activeView.productId,
-        product: activeView.snapshot,
-        leftAt,
-        durationMs: Math.max(0, leftAt - activeView.startedAt),
-      }),
-    );
+    this.emit({
+      ...activeView.event,
+      product: activeView.snapshot,
+      leftAt,
+      durationMs: Math.max(0, leftAt - activeView.startedAt),
+    });
     this.activeView = undefined;
   }
 
   private recordClick(event: MouseEvent): void {
     const target = event.target;
-    if (!(target instanceof Element) || !this.activeView) return;
+    if (!(target instanceof Element)) return;
+
+    const productLink = findProductLink(target, this.adapter);
+    if (productLink) {
+      if (this.activeView) this.finishActiveView(this.now());
+      const productName = productNameForLink(productLink);
+      if (productName) {
+        const product = productSnapshotFromInfo(
+          productLink.href,
+          { name: { id: "replay-click-name", value: productName } },
+          this.now(),
+        );
+        this.emit(
+          createDecisionEvent("PRODUCT_CLICK", product.viewedAt, {
+            productId: product.productId,
+            product,
+          }),
+        );
+      }
+      return;
+    }
+
+    if (!this.activeView) return;
     const action = actionForElement(target);
     if (!action) return;
     const elemId = elementId(target);
@@ -248,4 +279,24 @@ function createLocalElementId(element: Element): string {
   const id = `replay-${globalThis.crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2)}`;
   element.setAttribute(DEHYPE_ELEMENT_ID, id);
   return id;
+}
+
+function findProductLink(
+  element: Element,
+  adapter: ProductAdapter,
+): HTMLAnchorElement | undefined {
+  const link = element.closest("a[href]");
+  return link instanceof HTMLAnchorElement && adapter.isSupportedPage(link.href)
+    ? link
+    : undefined;
+}
+
+function productNameForLink(link: HTMLAnchorElement): string {
+  const accessibleName =
+    link.getAttribute("aria-label") ?? link.getAttribute("title") ?? "";
+  const imageAlt = link.querySelector("img[alt]")?.getAttribute("alt") ?? "";
+  const text = (link.textContent ?? "").replace(/\s+/g, " ").trim();
+  return [accessibleName, text, imageAlt]
+    .map((value) => value.replace(/\s+/g, " ").trim())
+    .find((value) => value.length > 0) ?? "";
 }

@@ -6,6 +6,15 @@ const analysis = document.querySelector("#analysis");
 const meta = document.querySelector("#session-meta");
 const budget = document.querySelector("#budget");
 let session;
+window.setInterval(() => {
+  if (session) render();
+}, 1000);
+
+chrome.runtime.onMessage.addListener((message) => {
+  if (message?.type !== "DEHYPE_REPLAY_SESSION_UPDATED" || !message.session) return;
+  session = message.session;
+  render();
+});
 
 document.querySelector("#analyze").addEventListener("click", async () => {
   setAnalysisMessage("Analyzing the local replay...");
@@ -26,6 +35,12 @@ document.querySelector("#save-intent").addEventListener("click", async () => {
 });
 
 void load();
+
+chrome.storage.onChanged.addListener((changes, areaName) => {
+  if (areaName !== "local" || !changes.decisionReplaySession?.newValue) return;
+  session = changes.decisionReplaySession.newValue;
+  render();
+});
 
 async function load() {
   const response = await chrome.runtime.sendMessage({ type: "DEHYPE_REPLAY_GET_SESSION" });
@@ -49,8 +64,13 @@ function renderTimeline() {
     const item = document.createElement("li");
     item.className = "timeline-item";
     const product = event.product;
-    const label = event.action === "PRODUCT_VIEW" && event.durationMs !== undefined ? "Viewed" : actionLabel(event.action);
-    item.innerHTML = `<span class="time">${formatTime(event.timestamp)}</span><span><span class="event-action">${label}</span> <span class="event-name">${escapeHtml(product?.name ?? event.productId ?? "Session")}</span></span><span class="price">${escapeHtml(product?.currentPrice ?? "")}</span>${event.durationMs !== undefined ? `<span class="duration">${formatDuration(event.durationMs)}</span>` : ""}`;
+    const label = event.action === "PRODUCT_VIEW"
+      ? (event.durationMs === undefined ? "Viewing" : "Viewed")
+      : actionLabel(event.action);
+    const duration = event.action === "PRODUCT_VIEW"
+      ? `<span class="duration">${formatDuration(event.durationMs ?? Date.now() - event.timestamp)}</span>`
+      : "";
+    item.innerHTML = `<span class="time">${formatTime(event.timestamp)}</span><span><span class="event-action">${label}</span> <span class="event-name">${escapeHtml(product?.name ?? event.productId ?? "Session")}</span></span><span class="price">${escapeHtml(product?.currentPrice ?? "")}</span>${duration}`;
     timeline.append(item);
   }
 }
@@ -60,7 +80,9 @@ function renderProducts() {
   for (const event of session.events) {
     if (!event.product) continue;
     const current = byProduct.get(event.product.productId) ?? { ...event.product, durationMs: 0 };
-    current.durationMs += event.durationMs ?? 0;
+    current.durationMs +=
+      event.durationMs ??
+      (event.action === "PRODUCT_VIEW" ? Date.now() - event.timestamp : 0);
     byProduct.set(event.product.productId, current);
   }
   products.replaceChildren();
