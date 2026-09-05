@@ -13,6 +13,7 @@ const requiredHosts = [
   "https://api.openai.com/*",
   "https://generativelanguage.googleapis.com/*",
   "https://api.anthropic.com/*",
+  "https://www.temu.com/*",
 ];
 
 for (const candidateManifest of [manifest, developmentManifest]) {

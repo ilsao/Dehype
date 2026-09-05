@@ -12,7 +12,12 @@
     "noEmit": true,
     "isolatedModules": true,
     "jsx": "react-jsx",
-    "types": ["node", "vitest/globals"]
+    "types": ["node", "vitest/globals", "vite/client", "chrome"],
+    "verbatimModuleSyntax": true,
+    "noUncheckedSideEffectImports": true,
+    "moduleDetection": "force",
+    "skipLibCheck": true
   },
-  "include": ["extension/src", "vite.config.ts"]
+  "include": ["extension/src", "vite.config.ts", "vitest.config.ts", "tests"],
+  "exclude": ["node_modules", "dist"]
 }

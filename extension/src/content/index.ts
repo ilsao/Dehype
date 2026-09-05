@@ -1,8 +1,9 @@
+import { TemuProductAdapter } from "../adapters/temuProductAdapter";
+import { DEHYPE_ELEMENT_ID } from "../adapters/productAdapter";
 import type {
   NeutralizeProductInfoErrorResponse,
   NeutralizeProductValuesResponse,
   NeutralizedProductValues,
-  ProductElement,
   ProductInfo,
   ProductInfoValueOnly,
 } from "../shared/productInfo";
@@ -12,24 +13,9 @@ import {
   toValueOnlyProductInfo,
 } from "../shared/productInfo";
 
-const DEHYPE_ELEMENT_ID = "data-dehype-element-id";
+const productAdapter = new TemuProductAdapter();
 
 type SendResponse = (response?: unknown) => void;
-
-declare const chrome: {
-  runtime: {
-    onMessage: {
-      addListener(
-        listener: (
-          message: unknown,
-          sender: unknown,
-          sendResponse: SendResponse,
-        ) => boolean | void,
-      ): void;
-    };
-    sendMessage<T>(message: unknown): Promise<T>;
-  };
-};
 
 interface RebuildCurrentProductMessage {
   type: "DEHYPE_REBUILD_CURRENT_PRODUCT";
@@ -52,7 +38,7 @@ const originalTextByElementId = new Map<string, string>();
 chrome.runtime.onMessage.addListener(
   (
     message: unknown,
-    _sender: unknown,
+    _sender: chrome.runtime.MessageSender,
     sendResponse: SendResponse,
   ) => {
     if (!isContentScriptMessage(message)) {
@@ -85,7 +71,7 @@ async function rebuildCurrentProduct(): Promise<{
   productInfo?: ProductInfo;
   error?: string;
 }> {
-  const productInfo = extractProductInfoFromPage();
+  const productInfo = extractCurrentProduct(document, window.location.href);
 
   if (!productInfo) {
     return {
@@ -109,54 +95,24 @@ async function rebuildCurrentProduct(): Promise<{
   };
 }
 
-function extractProductInfoFromPage(): ProductInfo | null {
-  const nameElement =
-    document.querySelector<HTMLElement>("h1") ??
-    document.querySelector<HTMLElement>("[data-testid*='title']");
-
-  if (!nameElement?.textContent?.trim()) {
-    return null;
+export function extractCurrentProduct(
+  sourceDocument: Document,
+  pageUrl: string = window.location.href,
+): ProductInfo | undefined {
+  if (!productAdapter.isSupportedPage(pageUrl)) {
+    return undefined;
   }
 
-  const originPrize = optionalElement(
-    findElementByText(/\b(original|list|was)\b/i),
-  );
-  const realPrize = optionalElement(
-    findElementByText(/[$NT¥€£]\s?\d|^\s?\d+(\.\d{2})?\s?$/),
-  );
-  const discount = optionalElement(
-    findElementByText(/\b(\d+%\s*off|discount|sale)\b/i),
-  );
-  const image = optionalImageElement(
-    document.querySelector<HTMLImageElement>("img"),
-  );
-  const description = optionalElement(
-    document.querySelector<HTMLElement>(
-      "[data-testid*='description'], [class*='description']",
-    ),
-  );
-  const stockAmount = optionalElement(
-    findElementByText(/\b(only\s+\d+\s+left|\d+\s+left|stock)\b/i),
-  );
-
-  return {
-    name: toProductElement(nameElement),
-    ...(originPrize ? { originPrize } : {}),
-    ...(realPrize ? { realPrize } : {}),
-    ...(discount ? { discount } : {}),
-    ...(image ? { image } : {}),
-    ...(description ? { description } : {}),
-    ...(stockAmount ? { stockAmount } : {}),
-  };
+  return productAdapter.extractProductInfo(sourceDocument, pageUrl);
 }
 
 async function requestNeutralizedValues(
   valueOnlyPayloadForAi: ProductInfoValueOnly,
 ): Promise<NeutralizedProductValues> {
-  const response = await chrome.runtime.sendMessage<NeutralizeResponse>({
+  const response = (await chrome.runtime.sendMessage({
     type: "DEHYPE_NEUTRALIZE_VALUES",
     productValues: valueOnlyPayloadForAi,
-  });
+  })) as NeutralizeResponse;
 
   if (response.type === "DEHYPE_NEUTRALIZE_PRODUCT_INFO_ERROR") {
     throw new Error(response.message);
@@ -204,66 +160,6 @@ function restoreOriginalText(): void {
   }
 
   originalTextByElementId.clear();
-}
-
-function toProductElement(element: HTMLElement): ProductElement {
-  const id = getOrCreateDehypeId(element);
-
-  return {
-    id,
-    value: element.textContent?.trim() ?? "",
-  };
-}
-
-function optionalElement(
-  element: HTMLElement | null,
-): ProductElement | undefined {
-  if (!element?.textContent?.trim()) {
-    return undefined;
-  }
-
-  return toProductElement(element);
-}
-
-function optionalImageElement(
-  element: HTMLImageElement | null,
-): ProductElement | undefined {
-  if (!element?.src) {
-    return undefined;
-  }
-
-  const id = getOrCreateDehypeId(element);
-
-  return {
-    id,
-    value: element.src,
-  };
-}
-
-function findElementByText(pattern: RegExp): HTMLElement | null {
-  const elements = Array.from(
-    document.querySelectorAll<HTMLElement>("body *"),
-  );
-
-  return (
-    elements.find((element) => {
-      const text = element.textContent?.trim();
-
-      return Boolean(text && text.length <= 140 && pattern.test(text));
-    }) ?? null
-  );
-}
-
-function getOrCreateDehypeId(element: HTMLElement): string {
-  const existingId = element.getAttribute(DEHYPE_ELEMENT_ID);
-
-  if (existingId) {
-    return existingId;
-  }
-
-  const id = crypto.randomUUID();
-  element.setAttribute(DEHYPE_ELEMENT_ID, id);
-  return id;
 }
 
 function findDomElementByDehypeId(id: string): HTMLElement | null {
