@@ -27,20 +27,18 @@ function handleMessage(message, sender, sendResponse) {
     return false;
 }
 
+// Keep the classic content-script entry point testable without using ESM syntax.
+globalThis.__dehypeHandleMessage = handleMessage;
+
 // 瀏覽器環境：掛載 Chrome 訊息監聽器
 if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.onMessage) {
     chrome.runtime.onMessage.addListener(handleMessage);
 }
 
-// Node.js / Jest 單元測試環境匯出
-if (typeof module !== 'undefined' && module.exports) {
-    module.exports = { handleMessage };
-}
-
-
 // ===================================================
 // 開發測試區 (測試完畢後註解)
 // ===================================================
+
 /*
 
 function injectDevTestTools() {
@@ -69,6 +67,15 @@ function injectDevTestTools() {
     <div style="font-weight:bold; border-bottom:1px solid #334155; padding-bottom:4px;">
       🧪 Dehype 測試工具
     </div>
+    <div id="dehype-mock-product" style="background:#1e293b; padding:8px; border-radius:4px;">
+      <div data-dehype-id="mock-name">原始商品名稱</div>
+      <div data-dehype-id="mock-originPrice">原始原價</div>
+      <div data-dehype-id="mock-currentPrice">原始現價</div>
+      <div data-dehype-id="mock-discount">原始折扣</div>
+      <div data-dehype-id="mock-image">原始圖片說明</div>
+      <div data-dehype-id="mock-description">原始商品描述</div>
+      <div data-dehype-id="mock-stockAmount">原始庫存</div>
+    </div>
     <button id="dh-mock-run" style="cursor:pointer; padding:6px; background:#0284c7; color:white; border:none; border-radius:4px; font-weight:bold;">
       ▶ 執行 ProductInfo 替換
     </button>
@@ -81,7 +88,13 @@ function injectDevTestTools() {
 
   document.getElementById('dh-mock-run').onclick = () => {
     const mockProductInfo = {
-      name: { id: 'mock-name', value: '【中立化商品名稱】' }
+      name: { id: 'mock-name', value: '中立化商品名稱' },
+      originPrice: { id: 'mock-originPrice', value: '原價：NT$ 100' },
+      currentPrice: { id: 'mock-currentPrice', value: '現價：NT$ 80' },
+      discount: { id: 'mock-discount', value: '折扣：20%' },
+      image: { id: 'mock-image', value: '商品圖片' },
+      description: { id: 'mock-description', value: '中立化商品描述' },
+      stockAmount: { id: 'mock-stockAmount', value: '庫存：未知' }
     };
     handleMessage({ type: 'REPLACE_TEXT', payload: mockProductInfo }, {}, () => {});
   };
@@ -98,5 +111,8 @@ if (typeof document !== 'undefined') {
     injectDevTestTools();
   }
 }
+
+
+
 
 */

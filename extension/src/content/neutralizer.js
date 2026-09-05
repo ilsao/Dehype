@@ -23,7 +23,7 @@ class DOMReplacer {
             const element = this.findElement(id);
 
             if (!element) {
-                console.warn(`[Dehype] 找不到標記 ID: ${id}`);
+                console.debug(`[Dehype] 略過不存在的標記 ID: ${id}`);
                 return;
             }
 
@@ -65,4 +65,6 @@ class DOMReplacer {
     }
 }
 
-window.dehypeReplacer = new DOMReplacer();
+if (typeof window !== 'undefined') {
+    window.dehypeReplacer = new DOMReplacer();
+}

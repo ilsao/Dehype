@@ -1,6 +1,7 @@
-// tests/index.test.js
+import { beforeEach, describe, expect, test, vi } from 'vitest';
+import './index.js';
 
-const { handleMessage } = require('../src/content/index.js');
+const handleMessage = globalThis.__dehypeHandleMessage;
 
 describe('index.js - Message Handler Unit Tests', () => {
     let mockReplacer;
@@ -8,14 +9,14 @@ describe('index.js - Message Handler Unit Tests', () => {
     beforeEach(() => {
         // 模擬 window.dehypeReplacer 模組
         mockReplacer = {
-            replace: jest.fn(),
-            restore: jest.fn()
+            replace: vi.fn(),
+            restore: vi.fn()
         };
-        global.window = { dehypeReplacer: mockReplacer };
+        globalThis.window = { dehypeReplacer: mockReplacer };
     });
 
     test('收到 REPLACE_TEXT 時，應正確呼叫 window.dehypeReplacer.replace 並傳入 ProductInfo', () => {
-        const mockSendResponse = jest.fn();
+        const mockSendResponse = vi.fn();
         const mockProductInfo = {
             name: { id: 'test-id-1', value: '測試名稱' },
             originPrice: { id: 'test-id-2', value: 'NT$ 100' }
@@ -34,7 +35,7 @@ describe('index.js - Message Handler Unit Tests', () => {
     });
 
     test('收到 RESTORE_TEXT 時，應呼叫 window.dehypeReplacer.restore', () => {
-        const mockSendResponse = jest.fn();
+        const mockSendResponse = vi.fn();
 
         const result = handleMessage(
             { type: 'RESTORE_TEXT' },
@@ -48,7 +49,7 @@ describe('index.js - Message Handler Unit Tests', () => {
     });
 
     test('收到未知的 Message Type 時，應忽略不處理並回傳 false', () => {
-        const mockSendResponse = jest.fn();
+        const mockSendResponse = vi.fn();
 
         const result = handleMessage(
             { type: 'INVALID_TYPE' },
