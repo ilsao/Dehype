@@ -390,7 +390,7 @@ function waitForSearchProducts(): Promise<ComparableProduct[]> {
   const first = searchAdapter.extractProducts(document);
   if (first.length > 0) return Promise.resolve(first);
   return new Promise((resolve) => {
-    let timer: number | undefined;
+    const timer = window.setTimeout(() => finish(searchAdapter.extractProducts(document)), 10_000);
     const observer = new MutationObserver(() => {
       const products = searchAdapter.extractProducts(document);
       if (products.length > 0) finish(products);
@@ -401,7 +401,6 @@ function waitForSearchProducts(): Promise<ComparableProduct[]> {
       resolve(products);
     };
     observer.observe(document.documentElement, { childList: true, subtree: true });
-    timer = window.setTimeout(() => finish(searchAdapter.extractProducts(document)), 10_000);
   });
 }
 
