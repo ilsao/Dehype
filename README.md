@@ -21,40 +21,55 @@ Dehype 從四個面向優化使用者的選購流程：
 
 ## 系統架構
 
-```mermaid
-flowchart LR
-    user((使用者))
-    temu[Temu 商品頁面]
+![Dehype Architecture](./img/architecture.png)
 
-    subgraph extension[Dehype Chrome Extension]
-        popup[Popup<br/>基本設定]
-        panel[Side Panel<br/>需求與分析結果]
-        content[Content Script<br/>讀取與修改頁面]
-        adapter[Temu Adapter<br/>商品資料整理]
-        worker[Background Worker<br/>流程與訊息管理]
-        shared[Core Logic<br/>分析與比較]
-        storage[(Local Storage<br/>設定與分析資料)]
-    end
-
-    ai[AI API]
-
-    user --> popup
-    user --> panel
-
-    temu <--> content
-    content --> adapter
-    adapter --> shared
-
-    popup <--> worker
-    panel <--> worker
-    content <--> worker
-    worker <--> shared
-
-    popup --> storage
-    panel --> storage
-    worker --> storage
-
-    worker -. AI 分析 .-> ai
+``` plain text
+```text
+Dehype/
+├── AGENTS.md                               # 產品原則、MVP 範圍與架構規範
+├── README.md                               # 專案現況、功能與開發方式
+├── package.json                            # 建置、測試及檢查指令
+├── extension/
+│   ├── manifest.json                       # Chrome MV3 權限、入口與支援網域
+│   ├── img/
+│   │   └── Dehype.png
+│   └── src/
+│       ├── sidepanel/
+│       │   ├── index.html                  # Side Panel 主畫面結構
+│       │   ├── main.ts                     # 功能切換、狀態同步與主要互動
+│       │   ├── sidepanel.css               # Side Panel 共用視覺設計
+│       │   ├── decisionReplay.html         # Decision Replay 畫面
+│       │   ├── decisionReplay.js           # Replay 資料載入與呈現
+│       │   └── decisionReplay.css
+│       ├── background/
+│       │   ├── background.ts               # Service Worker 與訊息協調中心
+│       │   ├── neutralizeWorkflow.ts       # Neutralize 分析流程
+│       │   ├── needMatchWorkflow.ts        # UserNeed 比對流程
+│       │   ├── aiProvider.ts               # OpenAI、Gemini、Claude 串接
+│       │   ├── decisionReplayStorage.js    # Replay session 本機持久化
+│       │   └── decisionReplayAnalysis.js   # Replay AI 分析
+│       ├── content/
+│       │   ├── index.ts                    # Temu 頁面操作與可逆式重建
+│       │   └── decisionReplayRecorder.ts   # 瀏覽與商品互動事件紀錄
+│       ├── adapters/
+│       │   ├── productAdapter.ts           # 零售網站 Adapter 共用介面
+│       │   ├── temuProductAdapter.ts       # Temu 商品資料與促銷元素擷取
+│       │   └── temuSearchAdapter.ts        # Temu 搜尋結果與價格資料擷取
+│       └── shared/
+│           ├── productInfo.ts              # 正規化商品資料與訊息契約
+│           ├── userNeed.ts                 # 使用者需求資料模型
+│           ├── needMatch.ts                # 需求比對結果與狀態
+│           ├── priceComparison.ts          # 價格統計邏輯
+│           ├── decisionReplay.ts           # Replay domain model
+│           ├── decisionTrace.ts            # 決策歷程與 Attention Share
+│           ├── aiSettings.ts               # AI 設定、同意與權限管理
+│           └── tabActions.ts               # Side Panel 對分頁的安全操作
+├── tests/
+│   └── ...                                 # Adapter 與核心流程測試
+├── website/
+│   └── ...                                 # Dehype 展示網站
+└── ...
+```
 ```
 
 ## 使用技術
@@ -62,11 +77,10 @@ flowchart LR
 | 類型 | 技術／服務 | 用途 |
 | --- | --- | --- |
 | AI 模型 | OpenAI、Google Gemini、Anthropic Claude（可選） | 商品文句中性化與需求契合分析 |
-| 前端 | TypeScript、HTML/CSS、Chrome Extension Manifest V3、Chrome Popup、Side Panel、Content Script | 擴充功能介面、Temu 頁面重建與使用者操作 |
+| 前端 | TypeScript、HTML/CSS、Chrome Extension Manifest V3 | 擴充功能介面、Temu 頁面重建與使用者操作 |
 | 後端 | Chrome MV3 Service Worker、Vite、Node.js | 訊息路由、分析工作流程、打包與建置 |
 | 資料儲存 | `chrome.storage.local` | 本機保存設定、需求、分析與決策回放資料 |
 | 測試 | Vitest、JSDOM、ESLint、TypeScript | 單元測試、DOM 整合測試、型別與程式碼檢查 |
-| Sponsor 技術 | 未使用 sponsor-specific 服務 | 核心功能不依賴特定贊助商平台 |
 
 ## 安裝與執行
 
@@ -80,8 +94,8 @@ flowchart LR
 ### 2. 安裝依賴與驗證
 
 ```sh
-git clone <repository-url>
-cd <repository-directory>
+git clone https://github.com/ilsao/Dehype.git
+cd Dehype
 npm ci
 npm run lint
 npm test
@@ -113,7 +127,7 @@ npm run dev
 
 ## 作品展示
 
-- 作品展示網址（選填）：尚未提供
+- 作品展示網址：[https://ilsao.github.io/Dehype/](https://ilsao.github.io/Dehype/)
 - 評選影片：尚未提供
 
 ## 限制與未來工作
@@ -146,11 +160,7 @@ npm run dev
 | `lucide-react` | [Lucide](https://lucide.dev/) | ISC License |
 | Dehype 圖示 | `extension/img/Dehype.png` | 專案素材；未使用外部個人資料或生產環境頁面截圖 |
 
-本專案不應提交 API key、Token、Cookie、個人地址、帳號資料或完整生產環境頁面擷取內容。
-
 ## 團隊成員
-
-以下為目前 README 的建議分工，實際提交前請依團隊共識調整：
 
 | 姓名 | 分工 |
 | --- | --- |
