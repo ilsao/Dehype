@@ -6,11 +6,11 @@ class DOMReplacer {
     }
 
     /**
-     * 核心替換方法 (支援 ProductInfo 內包含 multiple Elem { id, value } 物件)
-     * @param {Object} productInfo - 包含 name, originPrice, currentPrice 等 Elem 結構的物件
+     * 核心替換方法 (支援 ProductInfo 內包含 multiple ProductElement { id, value } 物件)
+     * @param {Object} productInfo - 包含 name, originalPrice, currentPrice 等 ProductElement 結構的物件
      */
     replace(productInfo = {}) {
-        // 解析 ProductInfo 物件內所有符合 Elem { id, value } 結構的欄位
+        // 解析 ProductInfo 物件內所有符合 ProductElement { id, value } 結構的欄位
         const targets = [];
 
         Object.values(productInfo).forEach((item) => {

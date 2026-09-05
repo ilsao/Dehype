@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   AI_SETTINGS_KEY,
   defaultModelForProvider,
+  getAiSettingsStatus,
   loadAiSettings,
   saveAiSettings,
   validateAiSettings,
@@ -57,5 +58,53 @@ describe("AI settings", () => {
     expect(defaultModelForProvider("claude")).toBe(
       "claude-3-5-haiku-latest",
     );
+  });
+
+  it("reports healthy only when complete AI settings are stored", async () => {
+    const configuredStorage = {
+      get: vi.fn(async () => ({
+        [AI_SETTINGS_KEY]: {
+          provider: "openai",
+          model: "gpt-4.1-mini",
+          apiKey: "test-key",
+        },
+      })),
+    };
+    const emptyStorage = { get: vi.fn(async () => ({})) };
+
+    await expect(getAiSettingsStatus(configuredStorage)).resolves.toEqual({
+      healthy: true,
+      configured: true,
+    });
+    await expect(getAiSettingsStatus(emptyStorage)).resolves.toEqual({
+      healthy: false,
+      configured: false,
+    });
+  });
+
+  it("reports unhealthy for invalid settings or storage failures", async () => {
+    const invalidStorage = {
+      get: vi.fn(async () => ({
+        [AI_SETTINGS_KEY]: {
+          provider: "gemini",
+          model: "",
+          apiKey: "test-key",
+        },
+      })),
+    };
+    const failingStorage = {
+      get: vi.fn(async () => {
+        throw new Error("Storage unavailable");
+      }),
+    };
+
+    await expect(getAiSettingsStatus(invalidStorage)).resolves.toEqual({
+      healthy: false,
+      configured: false,
+    });
+    await expect(getAiSettingsStatus(failingStorage)).resolves.toEqual({
+      healthy: false,
+      configured: false,
+    });
   });
 });

@@ -9,20 +9,14 @@ export interface ProductElement {
   value: string;
 }
 
-export type Elem = ProductElement;
-
 export interface ProductInfo {
   name: ProductElement;
-  originPrize?: ProductElement;
-  realPrize?: ProductElement;
+  originalPrice?: ProductElement;
+  currentPrice?: ProductElement;
   discount?: ProductElement;
   image?: ProductElement;
   description?: ProductElement;
   stockAmount?: ProductElement;
-
-  /** Compatibility aliases for code that uses price spelling. */
-  originalPrice?: ProductElement;
-  currentPrice?: ProductElement;
 }
 
 export type ProductInfoField = keyof ProductInfo;
@@ -35,14 +29,12 @@ export type NeutralizedProductValues = ProductInfoValueOnly;
 
 export const PRODUCT_INFO_FIELDS = [
   "name",
-  "originPrize",
-  "realPrize",
+  "originalPrice",
+  "currentPrice",
   "discount",
   "image",
   "description",
   "stockAmount",
-  "originalPrice",
-  "currentPrice",
 ] as const satisfies readonly ProductInfoField[];
 
 export interface NeutralizeProductInfoRequest {

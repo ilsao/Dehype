@@ -55,3 +55,14 @@ export async function saveAiSettings(storageArea, value) {
   await storageArea.set({ [AI_SETTINGS_KEY]: settings });
   return settings;
 }
+
+export async function getAiSettingsStatus(storageArea) {
+  try {
+    const settings = await loadAiSettings(storageArea);
+    const configured = settings !== null;
+
+    return { healthy: configured, configured };
+  } catch {
+    return { healthy: false, configured: false };
+  }
+}

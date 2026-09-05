@@ -4,14 +4,12 @@ import { validateAiSettings } from "../shared/aiSettings.js";
 
 const PRODUCT_FIELDS = new Set([
   "name",
-  "originPrize",
-  "realPrize",
+  "originalPrice",
+  "currentPrice",
   "discount",
   "image",
   "description",
   "stockAmount",
-  "originalPrice",
-  "currentPrice",
 ]);
 
 const SYSTEM_PROMPT = [

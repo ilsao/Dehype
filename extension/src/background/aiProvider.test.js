@@ -7,7 +7,7 @@ import {
 
 const productValues = {
   name: "HOT SALE Wireless Earbuds!",
-  realPrize: "$12.99 today only",
+  currentPrice: "$12.99 today only",
   stockAmount: "Only 3 left",
 };
 
@@ -25,7 +25,7 @@ describe("AI provider requests", () => {
       providerResponse({
         output_text: JSON.stringify({
           name: "Wireless Earbuds",
-          realPrize: "$12.99",
+          currentPrice: "$12.99",
         }),
       }),
     );
@@ -36,7 +36,7 @@ describe("AI provider requests", () => {
         productValues,
         fetchImpl,
       }),
-    ).resolves.toEqual({ name: "Wireless Earbuds", realPrize: "$12.99" });
+    ).resolves.toEqual({ name: "Wireless Earbuds", currentPrice: "$12.99" });
 
     const [url, request] = fetchImpl.mock.calls[0];
     expect(url).toBe("https://api.openai.com/v1/responses");
@@ -128,11 +128,23 @@ describe("AI response parsing", () => {
   });
 
   it("rejects malformed or unusable responses", () => {
+    const legacyOriginalPrice = ["origin", "Prize"].join("");
+    const legacyCurrentPrice = ["real", "Prize"].join("");
+
     expect(() => parseNeutralizedValues("not json", productValues)).toThrow(
       "invalid JSON",
     );
     expect(() =>
       parseNeutralizedValues('{"unknown":"value"}', productValues),
+    ).toThrow("no usable product fields");
+    expect(() =>
+      parseNeutralizedValues(
+        JSON.stringify({
+          [legacyOriginalPrice]: "$49.99",
+          [legacyCurrentPrice]: "$12.99",
+        }),
+        productValues,
+      ),
     ).toThrow("no usable product fields");
   });
 });

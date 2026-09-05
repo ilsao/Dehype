@@ -1,9 +1,9 @@
 import { describe, expect, expectTypeOf, it } from "vitest";
 
 import type {
-  Elem,
   NeutralizeProductValuesRequest,
   NeutralizedProductValues,
+  ProductElement,
   ProductInfo,
 } from "./productInfo";
 import {
@@ -18,7 +18,7 @@ describe("ProductInfo contract", () => {
     };
 
     expect(product.name.value).toBe("Neutral product");
-    expectTypeOf(product).toMatchTypeOf<{ name: Elem }>();
+    expectTypeOf(product).toMatchTypeOf<{ name: ProductElement }>();
   });
 
   it("keeps extracted details optional", () => {
@@ -34,13 +34,13 @@ describe("ProductInfo contract", () => {
 
     expect(product.currentPrice?.value).toBe("NT$800");
     expectTypeOf<ProductInfo["originalPrice"]>().toEqualTypeOf<
-      Elem | undefined
+      ProductElement | undefined
     >();
   });
 
   it("requires string values for extracted elements", () => {
-    expectTypeOf<Elem["id"]>().toEqualTypeOf<string>();
-    expectTypeOf<Elem["value"]>().toEqualTypeOf<string>();
+    expectTypeOf<ProductElement["id"]>().toEqualTypeOf<string>();
+    expectTypeOf<ProductElement["value"]>().toEqualTypeOf<string>();
     expectTypeOf<Record<string, never>>().not.toMatchTypeOf<ProductInfo>();
   });
 });
@@ -49,8 +49,8 @@ describe("Hype2.md ProductInfo requirement", () => {
   it("sends only field values from the documented ProductInfo shape to AI", () => {
     const productInfo: ProductInfo = {
       name: { id: "name-dom-node", value: "HOT SALE Wireless Earbuds!" },
-      originPrize: { id: "origin-price-dom-node", value: "$49.99" },
-      realPrize: { id: "real-price-dom-node", value: "$12.99 today only" },
+      originalPrice: { id: "original-price-dom-node", value: "$49.99" },
+      currentPrice: { id: "current-price-dom-node", value: "$12.99 today only" },
       discount: { id: "discount-dom-node", value: "74% OFF limited time" },
       image: {
         id: "image-dom-node",
@@ -70,8 +70,8 @@ describe("Hype2.md ProductInfo requirement", () => {
 
     expect(requestForAi.productValues).toEqual({
       name: "HOT SALE Wireless Earbuds!",
-      originPrize: "$49.99",
-      realPrize: "$12.99 today only",
+      originalPrice: "$49.99",
+      currentPrice: "$12.99 today only",
       discount: "74% OFF limited time",
       image: "https://example.invalid/earbuds.png",
       description: "Must-have viral earbuds with flash sale bonus",
@@ -79,8 +79,8 @@ describe("Hype2.md ProductInfo requirement", () => {
     });
     expect(Object.keys(requestForAi.productValues)).toEqual([
       "name",
-      "originPrize",
-      "realPrize",
+      "originalPrice",
+      "currentPrice",
       "discount",
       "image",
       "description",
@@ -96,7 +96,7 @@ describe("Hype2.md ProductInfo requirement", () => {
   it("applies neutralized AI values back to the same local elements", () => {
     const originalProductInfo: ProductInfo = {
       name: { id: "name-dom-node", value: "HOT SALE Wireless Earbuds!" },
-      realPrize: { id: "real-price-dom-node", value: "$12.99 today only" },
+      currentPrice: { id: "current-price-dom-node", value: "$12.99 today only" },
       discount: { id: "discount-dom-node", value: "74% OFF limited time" },
       description: {
         id: "description-dom-node",
@@ -106,7 +106,7 @@ describe("Hype2.md ProductInfo requirement", () => {
     };
     const neutralizedValues: NeutralizedProductValues = {
       name: "Wireless Earbuds",
-      realPrize: "$12.99",
+      currentPrice: "$12.99",
       discount: "74% discount listed",
       description: "Wireless earbuds with listed product details.",
       stockAmount: "Listed stock quantity: 3",
@@ -119,7 +119,7 @@ describe("Hype2.md ProductInfo requirement", () => {
 
     expect(neutralizedProductInfo).toEqual({
       name: { id: "name-dom-node", value: "Wireless Earbuds" },
-      realPrize: { id: "real-price-dom-node", value: "$12.99" },
+      currentPrice: { id: "current-price-dom-node", value: "$12.99" },
       discount: { id: "discount-dom-node", value: "74% discount listed" },
       description: {
         id: "description-dom-node",
@@ -137,8 +137,8 @@ describe("ProductInfo AI payload safety", () => {
   it("builds an AI request from ProductInfo values without element ids", () => {
     const productInfo: ProductInfo = {
       name: { id: "name-element", value: "Flash Deal Phone Case!" },
-      originPrize: { id: "origin-price-element", value: "$24.99" },
-      realPrize: { id: "real-price-element", value: "$8.99" },
+      originalPrice: { id: "original-price-element", value: "$24.99" },
+      currentPrice: { id: "current-price-element", value: "$8.99" },
       discount: { id: "discount-element", value: "64% OFF today only" },
       image: { id: "image-element", value: "https://example.invalid/case.png" },
       description: {
@@ -157,8 +157,8 @@ describe("ProductInfo AI payload safety", () => {
       type: "DEHYPE_NEUTRALIZE_VALUES",
       productValues: {
         name: "Flash Deal Phone Case!",
-        originPrize: "$24.99",
-        realPrize: "$8.99",
+        originalPrice: "$24.99",
+        currentPrice: "$8.99",
         discount: "64% OFF today only",
         image: "https://example.invalid/case.png",
         description: "Trending must-have phone case",
@@ -174,8 +174,8 @@ describe("ProductInfo AI payload safety", () => {
   it("creates a value-only payload without DOM ids", () => {
     const productInfo: ProductInfo = {
       name: { id: "name-dom-id", value: "Hot Sale Wireless Earbuds!" },
-      originPrize: { id: "origin-price-dom-id", value: "$39.99" },
-      realPrize: { id: "real-price-dom-id", value: "$9.99 today only" },
+      originalPrice: { id: "original-price-dom-id", value: "$39.99" },
+      currentPrice: { id: "current-price-dom-id", value: "$9.99 today only" },
       discount: { id: "discount-dom-id", value: "75% OFF - Limited time" },
       image: { id: "image-dom-id", value: "https://example.com/item.jpg" },
       description: { id: "description-dom-id", value: "Must-have viral item" },
@@ -186,8 +186,8 @@ describe("ProductInfo AI payload safety", () => {
 
     expect(valueOnlyPayload).toEqual({
       name: "Hot Sale Wireless Earbuds!",
-      originPrize: "$39.99",
-      realPrize: "$9.99 today only",
+      originalPrice: "$39.99",
+      currentPrice: "$9.99 today only",
       discount: "75% OFF - Limited time",
       image: "https://example.com/item.jpg",
       description: "Must-have viral item",
@@ -199,13 +199,13 @@ describe("ProductInfo AI payload safety", () => {
   it("merges neutralized values back into ProductInfo while preserving ids", () => {
     const originalProductInfo: ProductInfo = {
       name: { id: "name-id", value: "Hot Sale Wireless Earbuds!" },
-      realPrize: { id: "price-id", value: "$9.99 today only" },
+      currentPrice: { id: "price-id", value: "$9.99 today only" },
       discount: { id: "discount-id", value: "75% OFF - Limited time" },
       description: { id: "description-id", value: "Must-have viral item" },
     };
     const neutralizedValues: NeutralizedProductValues = {
       name: "Wireless Earbuds",
-      realPrize: "$9.99",
+      currentPrice: "$9.99",
       discount: "75% discount listed",
       description: "Wireless earbuds with listed product features.",
     };
@@ -217,7 +217,7 @@ describe("ProductInfo AI payload safety", () => {
 
     expect(neutralizedProductInfo).toEqual({
       name: { id: "name-id", value: "Wireless Earbuds" },
-      realPrize: { id: "price-id", value: "$9.99" },
+      currentPrice: { id: "price-id", value: "$9.99" },
       discount: { id: "discount-id", value: "75% discount listed" },
       description: {
         id: "description-id",

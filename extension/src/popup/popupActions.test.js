@@ -35,10 +35,10 @@ describe("popup actions", () => {
   it("shows model values without exposing DOM ids", () => {
     const values = productInfoValues({
       name: { id: "name-dom-id", value: "Wireless Earbuds" },
-      realPrize: { id: "price-dom-id", value: "$12.99" },
+      currentPrice: { id: "price-dom-id", value: "$12.99" },
     });
 
-    expect(values).toEqual({ name: "Wireless Earbuds", realPrize: "$12.99" });
+    expect(values).toEqual({ name: "Wireless Earbuds", currentPrice: "$12.99" });
     expect(JSON.stringify(values)).not.toContain("dom-id");
   });
 });
