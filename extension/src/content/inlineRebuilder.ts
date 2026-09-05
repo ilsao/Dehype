@@ -29,13 +29,8 @@ interface ReplacementEntry {
 
 interface NeutralizationEntry {
   element: HTMLElement;
-  action: NeutralizationTarget["action"];
-  marker?: typeof SUPPRESSED_MARKER | typeof DEEMPHASIZED_MARKER;
-  originalMarker?: AttributeSnapshot;
-  originalText?: string | null;
-  replacementText?: string | undefined;
-  parent?: Node;
-  nextSibling?: ChildNode | null;
+  marker: typeof SUPPRESSED_MARKER | typeof DEEMPHASIZED_MARKER;
+  originalMarker: AttributeSnapshot;
 }
 
 export interface InlineRebuildHandle {
@@ -130,8 +125,8 @@ export function applyInlineRebuild(
     for (const target of options.findNeutralizationTargets()) {
       const { element } = target;
       if (
-        (!element.isConnected && target.action !== "remove") ||
-        ((target.action === "suppress" || target.action === "remove") &&
+        !element.isConnected ||
+        (target.action === "suppress" &&
           replacements.some(
             ({ source, replacement }) =>
               element === source ||
@@ -147,82 +142,22 @@ export function applyInlineRebuild(
 
     for (const [element, entry] of neutralizations) {
       const nextTarget = nextTargets.get(element);
-      if (entry.action === "remove") {
-        // Detached nodes disappear from adapter scans; retain ownership until restore.
-        if (element.isConnected) element.remove();
-        continue;
-      }
-      if (entry.action === "rewrite-text") {
-        if (nextTarget?.action === "rewrite-text") {
-          if (
-            nextTarget.replacementText !== undefined &&
-            element.textContent !== nextTarget.replacementText
-          ) {
-            element.textContent = nextTarget.replacementText;
-          }
-          entry.replacementText = nextTarget.replacementText;
-          continue;
-        }
-        if (element.textContent === entry.replacementText) {
-          nextTargets.delete(element);
-          continue;
-        }
-        element.textContent = entry.originalText ?? null;
-        neutralizations.delete(element);
-        continue;
-      }
       const nextMarker = nextTarget ? markerFor(nextTarget) : undefined;
-      if (!nextTarget || nextTarget.action === "rewrite-text" || nextMarker !== entry.marker) {
-        if (entry.marker && entry.originalMarker) {
-          restoreAttribute(element, entry.marker, entry.originalMarker);
-        }
+      if (!nextTarget || nextMarker !== entry.marker) {
+        restoreAttribute(element, entry.marker, entry.originalMarker);
         neutralizations.delete(element);
       }
     }
 
     for (const [element, target] of nextTargets) {
-      const existing = neutralizations.get(element);
-      if (existing?.action === "remove") continue;
-      if (
-        target.action === "deemphasize" &&
-        hasActiveRewriteDescendant(element, neutralizations)
-      ) {
-        continue;
-      }
-      if (target.action === "rewrite-text") {
-        if (!existing && target.replacementText !== undefined) {
-          neutralizations.set(element, {
-            element,
-            action: target.action,
-            originalText: element.textContent,
-            replacementText: target.replacementText,
-          });
-          element.textContent = target.replacementText;
-          added += 1;
-        }
-        continue;
-      }
-      if (target.action === "remove") {
-        const parent = element.parentNode;
-        if (!parent) continue;
-        neutralizations.set(element, {
-          element,
-          action: target.action,
-          parent,
-          nextSibling: element.nextSibling,
-        });
-        element.remove();
-        added += 1;
-        continue;
-      }
       const marker = markerFor(target);
+      const existing = neutralizations.get(element);
       if (existing) {
         element.setAttribute(marker, target.presentation);
         continue;
       }
       neutralizations.set(element, {
         element,
-        action: target.action,
         marker,
         originalMarker: snapshotAttribute(element, marker),
       });
@@ -262,23 +197,8 @@ export function applyInlineRebuild(
         replacement?.remove();
         restoreAttribute(source, ORIGINAL_MARKER, originalMarker);
       }
-      for (const entry of [...neutralizations.values()].reverse()) {
-        if (entry.action === "remove") {
-          if (entry.parent?.isConnected && !entry.element.isConnected) {
-            entry.parent.insertBefore(
-              entry.element,
-              entry.nextSibling?.parentNode === entry.parent ? entry.nextSibling : null,
-            );
-          }
-          continue;
-        }
-        if (entry.action === "rewrite-text") {
-          entry.element.textContent = entry.originalText ?? null;
-          continue;
-        }
-        if (entry.marker && entry.originalMarker) {
-          restoreAttribute(entry.element, entry.marker, entry.originalMarker);
-        }
+      for (const { element, marker, originalMarker } of neutralizations.values()) {
+        restoreAttribute(element, marker, originalMarker);
       }
       if (layoutRoot && layoutRootMarker) {
         restoreAttribute(layoutRoot, LAYOUT_ROOT_MARKER, layoutRootMarker);
@@ -292,19 +212,6 @@ export function applyInlineRebuild(
       style.remove();
     },
   };
-}
-
-function hasActiveRewriteDescendant(
-  element: HTMLElement,
-  neutralizations: ReadonlyMap<HTMLElement, NeutralizationEntry>,
-): boolean {
-  return [...neutralizations.values()].some(
-    (entry) =>
-      entry.action === "rewrite-text" &&
-      entry.element !== element &&
-      element.contains(entry.element) &&
-      entry.element.textContent === entry.replacementText,
-  );
 }
 
 function markerFor(
@@ -496,17 +403,11 @@ function createPageStyle(
     }
     [${DEEMPHASIZED_MARKER}="neutral-action"] {
       border-color: transparent !important;
-      color: #263238 !important;
-      background-color: #f1f5f9 !important;
+      color: inherit !important;
+      background-color: transparent !important;
       background-image: none !important;
       box-shadow: none !important;
       text-shadow: none !important;
-    }
-    [${DEEMPHASIZED_MARKER}="neutral-action"] :not(img):not(picture):not(video) {
-      color: inherit !important;
-      -webkit-text-fill-color: currentColor !important;
-      background-color: transparent !important;
-      background-image: none !important;
     }
     [${DEEMPHASIZED_MARKER}="neutral-fact"] {
       border-color: transparent !important;
