@@ -19,4 +19,5 @@ export default tseslint.config(
         chrome: "readonly",
       },
     },
-  },);
+  },
+);

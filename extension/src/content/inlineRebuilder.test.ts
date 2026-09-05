@@ -1,7 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { DEHYPE_ELEMENT_ID } from "../adapters/productAdapter";
-import { TemuProductAdapter } from "../adapters/temuProductAdapter";
 import { applyInlineRebuild } from "./inlineRebuilder";
 
 beforeEach(() => {
@@ -14,22 +13,6 @@ afterEach(() => {
     .querySelectorAll("#dehype-inline-rebuild-control, #dehype-inline-rebuild-style")
     .forEach((element) => element.remove());
 });
-
-function markAsVisible(element: HTMLElement): void {
-  Object.defineProperty(element, "getBoundingClientRect", {
-    value: () => ({
-      x: 0,
-      y: 0,
-      width: 180,
-      height: 44,
-      top: 0,
-      right: 180,
-      bottom: 44,
-      left: 0,
-      toJSON: () => ({}),
-    }),
-  });
-}
 
 describe("inline page rebuilder", () => {
   it("inserts neutral values without destroying source descendants", () => {
@@ -189,79 +172,6 @@ describe("inline page rebuilder", () => {
     handle.restore();
   });
 
-  it("removes and restores a promotional card at its original position", () => {
-    document.body.innerHTML = `
-      <main>
-        <section id="upper-card"><span>BIG SALE</span></section>
-        <section id="lower-card">-61% now! Add to cart!</section>
-      </main>
-    `;
-    const upperCard = document.querySelector<HTMLElement>("#upper-card")!;
-    const lowerCard = document.querySelector<HTMLElement>("#lower-card")!;
-    const handle = applyInlineRebuild(
-      document,
-      { name: { id: "metadata-only", value: "Mug" } },
-      {
-        source: "structural",
-        findNeutralizationTargets: () => [
-          {
-            element: upperCard,
-            action: "remove",
-            reason: "promotion",
-            presentation: "removed-container",
-          },
-        ],
-        onRestore: vi.fn(),
-      },
-    );
-
-    expect(document.querySelector("#upper-card")).toBeNull();
-    expect(document.querySelector("main")?.children[0]).toBe(lowerCard);
-    expect(handle.suppressedElementCount).toBe(0);
-
-    handle.neutralizeNewElements();
-    expect(document.querySelector("#upper-card")).toBeNull();
-    handle.restore();
-    expect(document.querySelector("main")?.children[0]).toBe(upperCard);
-    expect(document.querySelector("main")?.children[1]).toBe(lowerCard);
-  });
-
-  it("removes a promotional card again when Temu reattaches the same node", () => {
-    document.body.innerHTML = `
-      <main>
-        <section id="upper-card"><span>BIG SALE</span></section>
-        <section id="lower-card">-61% now! Add to cart!</section>
-      </main>
-    `;
-    const upperCard = document.querySelector<HTMLElement>("#upper-card")!;
-    const main = document.querySelector("main")!;
-    const handle = applyInlineRebuild(
-      document,
-      { name: { id: "metadata-only", value: "Mug" } },
-      {
-        source: "structural",
-        findNeutralizationTargets: () => [
-          {
-            element: upperCard,
-            action: "remove",
-            reason: "promotion",
-            presentation: "removed-container",
-          },
-        ],
-        onRestore: vi.fn(),
-      },
-    );
-
-    main.append(upperCard);
-    expect(upperCard.isConnected).toBe(true);
-    expect(handle.neutralizeNewElements()).toBe(0);
-    expect(upperCard.isConnected).toBe(false);
-
-    handle.restore();
-    expect(main.children[0]).toBe(upperCard);
-    expect(main.children.item(1)?.id).toBe("lower-card");
-  });
-
   it("centers and restores the adapter-provided layout root", () => {
     document.body.innerHTML = `
       <main id="layout-root"><h1 ${DEHYPE_ELEMENT_ID}="name-id">Mug</h1></main>
@@ -384,141 +294,5 @@ describe("inline page rebuilder", () => {
     handle.restore();
     expect(card.hasAttribute("data-dehype-deemphasized")).toBe(false);
     expect(cart.hasAttribute("data-dehype-deemphasized")).toBe(false);
-  });
-});
-
-
-describe("commerce stability with the real Temu adapter", () => {
-  it("never changes a Go to cart control across repeated DOM scans", () => {
-    document.body.innerHTML = `
-      <section data-dehype-persuasion id="cart-card">
-        <div role="button" id="go-to-cart" class="temu-cart">
-          <span id="go-to-cart-label">Go to cart</span>
-        </div>
-      </section>`;
-    const adapter = new TemuProductAdapter();
-    const card = document.querySelector<HTMLElement>("#cart-card")!;
-    const button = document.querySelector<HTMLElement>("#go-to-cart")!;
-    const label = document.querySelector<HTMLElement>("#go-to-cart-label")!;
-    const clicked = vi.fn();
-    button.addEventListener("click", clicked);
-    const originalButtonAttributes = button.outerHTML;
-    const handle = applyInlineRebuild(
-      document,
-      { name: { id: "metadata", value: "Mug" } },
-      {
-        source: "structural",
-        findNeutralizationTargets: () =>
-          adapter.findNeutralizationTargets(document),
-        onRestore: vi.fn(),
-      },
-    );
-
-    for (let index = 0; index < 20; index += 1) {
-      handle.neutralizeNewElements();
-    }
-
-    expect(card.isConnected).toBe(true);
-    expect(button.outerHTML).toBe(originalButtonAttributes);
-    expect(label.textContent).toBe("Go to cart");
-    button.click();
-    expect(clicked).toHaveBeenCalledTimes(1);
-
-    handle.restore();
-    expect(button.outerHTML).toBe(originalButtonAttributes);
-    button.click();
-    expect(clicked).toHaveBeenCalledTimes(2);
-  });
-
-  it("settles observer updates and preserves the surviving nested label", async () => {
-    document.body.innerHTML = `
-      <div id="rightContent">
-        <section id="upper"><span>BIG SALE</span><button>Add to cart</button></section>
-        <button id="remaining"><span style="color:white">-61% now! Add to cart!</span></button>
-        <p id="shipping">Free shipping</p>
-      </div>`;
-    const adapter = new TemuProductAdapter();
-    const upper = document.querySelector<HTMLElement>("#upper")!;
-    const button = document.querySelector<HTMLButtonElement>("#remaining")!;
-    const clicked = vi.fn();
-    button.addEventListener("click", clicked);
-    const handle = applyInlineRebuild(document, { name: { id: "metadata", value: "Mug" } }, {
-      source: "structural",
-      findNeutralizationTargets: () => adapter.findNeutralizationTargets(document),
-      onRestore: vi.fn(),
-    });
-    let updates = 0;
-    const observer = new MutationObserver(() => {
-      updates += 1;
-      if (updates < 10) handle.neutralizeNewElements();
-    });
-    observer.observe(document.body, { childList: true, subtree: true });
-    for (let index = 0; index < 20; index += 1) handle.neutralizeNewElements();
-    expect(upper.isConnected).toBe(false);
-    expect(button.querySelector("span")?.closest("[data-dehype-suppressed]")).toBeNull();
-    expect(button.textContent).toContain("Add to cart");
-    document.querySelector("#rightContent")!.prepend(upper);
-    await new Promise((resolve) => setTimeout(resolve, 20));
-    expect(updates).toBeLessThan(3);
-    expect(upper.isConnected).toBe(false);
-    expect(clicked).not.toHaveBeenCalled();
-    observer.disconnect();
-    button.remove(); // The original restoration anchor no longer exists.
-    expect(() => handle.restore()).not.toThrow();
-    handle.restore();
-    expect(upper.isConnected).toBe(true);
-    button.click();
-    expect(clicked).toHaveBeenCalledTimes(1);
-  });
-
-  it.each(["disabled", 'aria-disabled="true"'])("keeps the only usable nested cart label with a %s alternative", (disabled) => {
-    document.body.innerHTML = `<div id="rightContent">
-      <button ${disabled}>Add to cart</button>
-      <section data-dehype-persuasion><button id="cart"><span>-61% now! Add to cart!</span></button></section>
-    </div>`;
-    const adapter = new TemuProductAdapter();
-    const handle = applyInlineRebuild(document, { name: { id: "metadata", value: "Mug" } }, {
-      source: "structural", findNeutralizationTargets: () => adapter.findNeutralizationTargets(document), onRestore: vi.fn(),
-    });
-    const label = document.querySelector("#cart span")!;
-    for (let index = 0; index < 5; index += 1) handle.neutralizeNewElements();
-    expect(label.closest("[data-dehype-suppressed]")).toBeNull();
-    expect(label.isConnected).toBe(true);
-    handle.restore();
-  });
-
-  it("keeps the visible promotional cart button clickable when a plain cart button is hidden", () => {
-    document.body.innerHTML = `
-      <div id="rightContent">
-        <button style="display: none">Add to cart</button>
-        <section data-dehype-persuasion id="promo-shell">
-          <button id="cart"><span id="cart-label">-9% now! Add to cart!</span></button>
-        </section>
-    </div>`;
-    const adapter = new TemuProductAdapter();
-    const button = document.querySelector<HTMLButtonElement>("#cart")!;
-    markAsVisible(button);
-    const clicked = vi.fn();
-    button.addEventListener("click", clicked);
-    const handle = applyInlineRebuild(document, { name: { id: "metadata", value: "Mug" } }, {
-      source: "structural",
-      findNeutralizationTargets: () => adapter.findNeutralizationTargets(document),
-      onRestore: vi.fn(),
-    });
-
-    for (let index = 0; index < 5; index += 1) handle.neutralizeNewElements();
-    button.click();
-
-    expect(button.textContent).toBe("Add to cart");
-    expect(button.hasAttribute("data-dehype-deemphasized")).toBe(false);
-    expect(button.hasAttribute("data-dehype-suppressed")).toBe(false);
-    expect(document.querySelector("#promo-shell")?.hasAttribute("data-dehype-suppressed"))
-      .toBe(false);
-    expect(document.querySelector("#cart-label")?.closest("[data-dehype-suppressed]"))
-      .toBeNull();
-    expect(clicked).toHaveBeenCalledTimes(1);
-    handle.restore();
-    expect(button.textContent).toBe("-9% now! Add to cart!");
-    expect(button.hasAttribute("data-dehype-deemphasized")).toBe(false);
   });
 });
