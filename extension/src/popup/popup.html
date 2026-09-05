@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="zh-TW">
+<html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -7,28 +7,39 @@
   <link rel="stylesheet" href="popup.css">
 </head>
 <body>
-  <div id="popup-container">
-    <!-- 第一行：圖示與標題、關閉按鈕 -->
-    <div id="header">
+  <main id="popup-container">
+    <header id="header">
       <div id="logo-title-area">
-        <img src="../../img/Dehype.png" alt="Logo" id="header-icon">
+        <span id="logo-mark" aria-hidden="true">
+          <img src="../../img/Dehype.png" alt="" id="header-icon">
+        </span>
         <span id="extension-name">Dehype</span>
       </div>
-      <button id="close-btn" aria-label="關閉">&times;</button>
-    </div>
-    
-    <!-- 第二行：切換按鈕列 -->
-    <div id="button-row">
-      <button id="neutralize-btn" class="action-btn active">Neutralize</button>
-      <button id="restore-btn" class="action-btn">Restore</button>
-    </div>
-    
-    <!-- 第三行：灰底狀態列 -->
-    <div id="status-row">
-      <span id="status-indicator" class="status-green"></span>
-      <span id="status-text">Show extension current status</span>
-    </div>
-  </div>
+      <button id="close-btn" type="button" aria-label="Close popup">
+        <svg viewBox="0 0 20 20" aria-hidden="true">
+          <path d="M5.75 5.75 14.25 14.25M14.25 5.75 5.75 14.25" />
+        </svg>
+      </button>
+    </header>
+
+    <section id="button-row" aria-label="Page actions">
+      <button
+        id="neutralize-btn"
+        class="action-btn action-btn-primary"
+        type="button"
+      >Neutralize</button>
+      <button
+        id="restore-btn"
+        class="action-btn action-btn-secondary"
+        type="button"
+      >Restore</button>
+    </section>
+
+    <footer id="status-row" role="status" aria-live="polite">
+      <span id="status-indicator" class="status-green" aria-hidden="true"></span>
+      <span id="status-text">Extension ready</span>
+    </footer>
+  </main>
   <script type="module" src="popup.js"></script>
 </body>
 </html>
