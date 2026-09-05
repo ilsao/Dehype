@@ -3,124 +3,66 @@
   <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Dehype User Needs</title>
+    <title>Dehype</title>
     <link rel="stylesheet" href="./sidepanel.css">
   </head>
   <body>
     <header class="app-header">
-      <div class="brand">
-        <img src="../../img/Dehype.png" alt="" class="brand-icon">
-        <div>
-          <p class="brand-name">Dehype</p>
-          <h1>User needs</h1>
-        </div>
-      </div>
-      <span id="mode-label" class="mode-label">New</span>
+      <button class="brand-button" type="button" data-view-target="home" aria-label="Dehype home"><img class="brand-icon" src="../../img/Dehype.png" alt=""><span class="brand-word">DE<span>HYPE</span></span></button>
     </header>
 
     <main>
-      <form id="user-need-form">
-        <fieldset id="user-need-fields">
-          <legend class="section-title">Preferences</legend>
-
-          <div class="budget-grid">
-            <label>
-              <span>Minimum budget</span>
-              <input id="min-budget" name="minBudget" type="number" min="0" step="any" inputmode="decimal" placeholder="Not set">
-            </label>
-            <label>
-              <span>Maximum budget</span>
-              <input id="max-budget" name="maxBudget" type="number" min="0" step="any" inputmode="decimal" placeholder="Not set">
-            </label>
-          </div>
-
-          <label class="text-field">
-            <span>Must have</span>
-            <textarea id="must-have" name="mustHave" rows="4" placeholder="One requirement per line"></textarea>
-          </label>
-
-          <label class="text-field">
-            <span>Nice to have</span>
-            <textarea id="nice-to-have" name="niceToHave" rows="4" placeholder="One preference per line"></textarea>
-          </label>
-
-          <label class="text-field">
-            <span>Exclude</span>
-            <textarea id="exclude" name="exclude" rows="4" placeholder="One exclusion per line"></textarea>
-          </label>
-        </fieldset>
-
-        <div class="actions">
-          <button id="save-button" class="primary-button" type="submit">Save</button>
-          <button id="edit-button" class="secondary-button" type="button" disabled hidden>Edit</button>
-          <button id="reset-button" class="danger-button" type="button">Reset</button>
-          <button id="compare-prices-button" class="secondary-button" type="button">Compare prices</button>
-        </div>
-      </form>
-
-      <section id="summary-section" class="summary-section" aria-labelledby="summary-heading" hidden>
-        <div class="summary-header">
-          <h2 id="summary-heading">Current preview</h2>
-          <span id="summary-state">Saved</span>
-        </div>
-
-        <dl class="budget-summary">
-          <div>
-            <dt>Minimum</dt>
-            <dd id="summary-min-budget">Not set</dd>
-          </div>
-          <div>
-            <dt>Maximum</dt>
-            <dd id="summary-max-budget">Not set</dd>
-          </div>
-        </dl>
-
-        <div class="summary-list">
-          <h3>Must have</h3>
-          <ul id="summary-must-have"></ul>
-        </div>
-        <div class="summary-list">
-          <h3>Nice to have</h3>
-          <ul id="summary-nice-to-have"></ul>
-        </div>
-        <div class="summary-list exclude-list">
-          <h3>Exclude</h3>
-          <ul id="summary-exclude"></ul>
-        </div>
+      <section id="home-view" class="view home-view" data-view="home">
+        <p class="eyebrow"><span>01</span> / Quiet buying assistant</p>
+        <h1>Keep the product.<br><em>Lose the pressure.</em></h1>
+        <p class="intro">Dehype softens persuasive shopping cues while keeping product facts and layout intact.</p>
+        <article id="neutralize-card" class="neutralize-card">
+          <div class="card-meta"><span>Current page</span><span id="neutralize-state">Checking</span></div>
+          <h2 id="neutralize-heading">Checking the current page</h2>
+          <p id="neutralize-description">Dehype is looking for a supported product page.</p>
+          <button id="neutralize-button" class="primary-button hero-button" type="button" hidden>Neutralize this page</button>
+        </article>
+        <div class="section-heading"><span>Decision tools</span><span>Open a page</span></div>
+        <nav class="feature-list" aria-label="Decision tools">
+          <button class="feature-link" type="button" data-view-target="needs"><span class="feature-number">01</span><span><strong>User Need</strong><small>Budget, requirements and preferences</small></span><span aria-hidden="true">→</span></button>
+          <button id="compare-prices-button" class="feature-link" type="button"><span class="feature-number feature-yellow">02</span><span><strong>Price Comparing</strong><small>Price distribution and market range</small></span><span aria-hidden="true">→</span></button>
+          <a class="feature-link" href="./decisionReplay.html"><span class="feature-number feature-purple">03</span><span><strong>Analysis</strong><small>Decision replay and AI reflection</small></span><span aria-hidden="true">→</span></a>
+        </nav>
+        <button id="ai-setup-notice" class="ai-setup-notice" type="button" data-view-target="settings" hidden><span class="notice-dot" aria-hidden="true"></span><span><strong>Connect an AI provider</strong><small>Enable Need Match and Analysis</small></span><span aria-hidden="true">→</span></button>
+        <button id="settings-link" class="settings-link" type="button" data-view-target="settings"><span>AI settings</span><span id="settings-summary">Not configured →</span></button>
       </section>
 
-      <section id="need-match-section" class="need-match-section" aria-labelledby="need-match-heading" hidden>
-        <div class="need-match-header">
-          <h2 id="need-match-heading">Need Match Analysis</h2>
-          <span id="need-match-status" class="match-badge">Analyzing</span>
-        </div>
-        <p id="need-match-product" class="need-match-product"></p>
-        <p id="need-match-explanation" class="need-match-explanation"></p>
-        <div id="need-match-details" class="need-match-details"></div>
+      <section id="needs-view" class="view" data-view="needs" hidden>
+        <header class="page-header"><button class="back-button" type="button" data-view-target="home">← Back</button><p class="eyebrow"><span>01</span> / User Need</p><h1>Keep your original<br><em>intent visible.</em></h1><p class="intro">Save the budget and product criteria you meant to follow.</p></header>
+        <form id="user-need-form">
+          <fieldset id="user-need-fields">
+            <legend class="section-title">Preferences</legend>
+            <div class="budget-grid"><label><span>Minimum budget</span><input id="min-budget" name="minBudget" type="number" min="0" step="any" inputmode="decimal" placeholder="Not set"></label><label><span>Maximum budget</span><input id="max-budget" name="maxBudget" type="number" min="0" step="any" inputmode="decimal" placeholder="Not set"></label></div>
+            <label class="text-field"><span>Must have</span><textarea id="must-have" name="mustHave" rows="4" placeholder="One requirement per line"></textarea></label>
+            <label class="text-field"><span>Nice to have</span><textarea id="nice-to-have" name="niceToHave" rows="4" placeholder="One preference per line"></textarea></label>
+            <label class="text-field"><span>Exclude</span><textarea id="exclude" name="exclude" rows="4" placeholder="One exclusion per line"></textarea></label>
+          </fieldset>
+          <div class="actions"><button id="save-button" class="primary-button" type="submit">Save</button><button id="edit-button" class="secondary-button" type="button" disabled hidden>Edit</button><button id="reset-button" class="quiet-danger-button" type="button">Reset</button></div>
+        </form>
+        <section id="summary-section" class="content-panel summary-section" aria-labelledby="summary-heading" hidden>
+          <div class="summary-header"><h2 id="summary-heading">Current intent</h2><span id="summary-state">Saved</span></div>
+          <dl class="budget-summary"><div><dt>Minimum</dt><dd id="summary-min-budget">Not set</dd></div><div><dt>Maximum</dt><dd id="summary-max-budget">Not set</dd></div></dl>
+          <div class="summary-list"><h3>Must have</h3><ul id="summary-must-have"></ul></div><div class="summary-list"><h3>Nice to have</h3><ul id="summary-nice-to-have"></ul></div><div class="summary-list exclude-list"><h3>Exclude</h3><ul id="summary-exclude"></ul></div>
+        </section>
+        <section id="need-match-section" class="content-panel need-match-section" aria-labelledby="need-match-heading" hidden><div class="need-match-header"><h2 id="need-match-heading">Need Match</h2><span id="need-match-status" class="match-badge">Analyzing</span></div><p id="need-match-product" class="need-match-product"></p><p id="need-match-explanation" class="need-match-explanation"></p><div id="need-match-details" class="need-match-details"></div></section>
       </section>
 
-      <section id="price-comparison-section" class="price-comparison-section" aria-labelledby="price-comparison-heading" hidden>
-        <div class="price-comparison-header">
-          <h2 id="price-comparison-heading">Price comparison</h2>
-          <button id="return-to-needs" class="secondary-button" type="button">Back to user needs</button>
-        </div>
-        <p id="price-status" class="price-status" role="status" aria-live="polite"></p>
-        <div class="price-chart-heading"><span>Price distribution</span><span id="price-budget-label"></span></div>
-        <div class="price-chart-frame">
-          <div class="price-axis-y">Products</div>
-          <div id="price-chart" class="price-chart" aria-label="Price distribution histogram"></div>
-          <div class="price-axis-x">Price range</div>
-        </div>
-        <div class="price-summary-heading">Price statistics</div>
-        <div class="price-summary-grid">
-          <div><span>Minimum</span><strong id="price-min"></strong></div>
-          <div><span>Median</span><strong id="price-median"></strong></div>
-          <div><span>Maximum</span><strong id="price-max"></strong></div>
-        </div>
+      <section id="prices-view" class="view" data-view="prices" hidden>
+        <header class="page-header"><button id="return-to-needs" class="back-button" type="button" data-view-target="home">← Back</button><p class="eyebrow"><span>02</span> / Price Comparing</p><h1>See the market.<br><em>Not the markdown.</em></h1><p id="price-status" class="intro price-status" role="status" aria-live="polite">Comparing prices...</p></header>
+        <section id="price-comparison-section" class="content-panel price-comparison-section"><div class="price-chart-heading"><span>Price distribution</span><span id="price-budget-label"></span></div><div class="price-chart-frame"><div class="price-axis-y">Products</div><div id="price-chart" class="price-chart" aria-label="Price distribution histogram"></div><div class="price-axis-x">Price range</div></div><div class="price-summary-heading">Price statistics</div><div class="price-summary-grid"><div><span>Minimum</span><strong id="price-min">—</strong></div><div><span>Median</span><strong id="price-median">—</strong></div><div><span>Maximum</span><strong id="price-max">—</strong></div></div><button id="refresh-prices-button" class="secondary-button full-button" type="button">Compare again</button></section>
+      </section>
+
+      <section id="settings-view" class="view" data-view="settings" hidden>
+        <header class="page-header"><button class="back-button" type="button" data-view-target="home">← Back</button><p class="eyebrow"><span>04</span> / Settings</p><h1>Choose your<br><em>quiet assistant.</em></h1><p class="intro">AI is optional. Structural cleanup remains available without it.</p></header>
+        <form id="settings-form" class="content-panel settings-form"><label><span>AI provider</span><select id="provider" name="provider"><option value="openai">ChatGPT / OpenAI</option><option value="gemini">Gemini</option><option value="claude">Claude</option></select></label><label><span>Model</span><input id="model" name="model" type="text" autocomplete="off" value="gpt-4.1-mini"></label><label><span>API key</span><input id="api-key" name="apiKey" type="password" autocomplete="off" placeholder="Enter your API key"></label><label class="consent-row"><input id="remote-consent" type="checkbox"><span>Send only extracted product values to this provider. No page HTML, account, or checkout data is sent.</span></label><button id="save-settings-button" class="primary-button full-button" type="submit">Save settings</button><p class="storage-note">Settings stay in this Chrome profile.</p></form>
       </section>
     </main>
-
-    <footer id="status" role="status" aria-live="polite">Loading saved needs...</footer>
+    <footer id="status" role="status" aria-live="polite">Loading Dehype...</footer>
     <script type="module" src="./main.ts"></script>
   </body>
 </html>

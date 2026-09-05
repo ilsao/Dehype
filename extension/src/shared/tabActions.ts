@@ -1,28 +1,20 @@
 import {
   isContentScriptErrorResponse,
   isRebuildCurrentProductResponse,
-} from "../shared/productInfo.js";
+} from "./productInfo.js";
 
 const CONTENT_SCRIPT_BUNDLE = "assets/content.js";
 
 interface TabsApi {
-  query(
-    queryInfo: chrome.tabs.QueryInfo,
-  ): Promise<Array<{ id?: number | undefined }>>;
+  query(queryInfo: chrome.tabs.QueryInfo): Promise<Array<{ id?: number | undefined }>>;
   sendMessage(tabId: number, message: unknown): Promise<unknown>;
 }
 
 interface ScriptingApi {
   executeScript(
     injection:
-      | {
-          target: { tabId: number };
-          files: string[];
-        }
-      | {
-          target: { tabId: number };
-          func: () => void;
-        },
+      | { target: { tabId: number }; files: string[] }
+      | { target: { tabId: number }; func: () => void },
   ): Promise<unknown>;
 }
 
@@ -67,9 +59,7 @@ export async function sendMessageToActiveTab<Response>(
   }
 
   if (isRebuildRequest(message)) {
-    if (isContentScriptErrorResponse(response)) {
-      throw new Error(response.message);
-    }
+    if (isContentScriptErrorResponse(response)) throw new Error(response.message);
     if (!isRebuildCurrentProductResponse(response)) {
       throw new Error("The page returned an invalid analysis response.");
     }
@@ -93,10 +83,7 @@ export function productInfoValues(productInfo: unknown): Record<string, string> 
 
   return Object.fromEntries(
     Object.entries(productInfo)
-      .filter(
-        ([, element]) =>
-          isRecord(element) && typeof element.value === "string",
-      )
+      .filter(([, element]) => isRecord(element) && typeof element.value === "string")
       .map(([field, element]) => [field, (element as { value: string }).value]),
   );
 }
@@ -110,8 +97,7 @@ function isMissingReceiverError(error: unknown): boolean {
 function readableConnectionError(error: unknown): Error {
   const message = errorMessage(error);
   return new Error(
-    message ||
-      "Dehype could not connect to this tab. Reload the Temu page and try again.",
+    message || "Dehype could not connect to this tab. Reload the Temu page and try again.",
     { cause: error },
   );
 }
@@ -120,15 +106,11 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error ?? "");
 }
 
-function isRebuildRequest(
-  message: unknown,
-): message is { type: "DEHYPE_REBUILD_CURRENT_PRODUCT" } {
+function isRebuildRequest(message: unknown): boolean {
   return isRecord(message) && message.type === "DEHYPE_REBUILD_CURRENT_PRODUCT";
 }
 
-function isRestoreRequest(
-  message: unknown,
-): message is { type: "DEHYPE_RESTORE_CURRENT_PRODUCT" } {
+function isRestoreRequest(message: unknown): boolean {
   return isRecord(message) && message.type === "DEHYPE_RESTORE_CURRENT_PRODUCT";
 }
 

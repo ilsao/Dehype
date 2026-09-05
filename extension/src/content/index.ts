@@ -6,6 +6,7 @@ import {
 } from "./inlineRebuilder";
 import type {
   ContentScriptErrorResponse,
+  GetPageStateResponse,
   NeutralizeProductValuesResponse,
   ProductInfo,
   ProductInfoValueOnly,
@@ -32,10 +33,15 @@ import {
   selectRandomProducts,
   summarizePrices,
 } from "../shared/priceComparison";
+import { DecisionReplayRecorder } from "./decisionReplayRecorder";
 
 const productAdapter = new TemuProductAdapter();
 const searchAdapter = new TemuSearchAdapter();
 const SEARCH_STATE_KEY = "dehype-price-search-state";
+const decisionReplayRecorder = new DecisionReplayRecorder({
+  document,
+  adapter: productAdapter,
+});
 const EXTRACTION_TIMEOUT_MS = 1_500;
 const EXTRACTION_DEBOUNCE_MS = 75;
 const NEED_MATCH_TRIGGER_DEBOUNCE_MS = 250;
@@ -52,6 +58,7 @@ interface WaitOptions {
 type ContentResponse =
   | RebuildCurrentProductResponse
   | RestoreCurrentProductResponse
+  | GetPageStateResponse
   | ContentScriptErrorResponse
   | PriceComparisonResult
   | PriceComparisonErrorResponse;
@@ -233,6 +240,16 @@ export function handleContentMessage(
   sendResponse: (response: ContentResponse) => void,
 ): boolean {
   if (!isContentScriptRequest(message)) return false;
+
+  if (message.type === "DEHYPE_GET_PAGE_STATE") {
+    sendResponse({
+      type: "DEHYPE_PAGE_STATE_RESULT",
+      neutralized: Boolean(activeResponse && activeRebuild?.targetsAreConnected()),
+      priceComparisonActive: sessionStorage.getItem(SEARCH_STATE_KEY) !== null,
+      supportedProduct: productAdapter.isSupportedPage(window.location.href),
+    });
+    return false;
+  }
 
   if (message.type === "DEHYPE_RETURN_FROM_SEARCH") {
     returnFromSearch();
@@ -630,9 +647,28 @@ if (
   !window.__dehypeContentScriptInitialized
 ) {
   window.__dehypeContentScriptInitialized = true;
+  window.__dehypeStopDecisionReplayRecorder?.();
+  decisionReplayRecorder.start();
+  window.__dehypeStopDecisionReplayRecorder = () =>
+    decisionReplayRecorder.stop();
   chrome.runtime.onMessage.addListener(
-    (message: unknown, _sender, sendResponse): boolean =>
-      handleContentMessage(message, sendResponse),
+    (message: unknown, _sender, sendResponse): boolean => {
+      if (
+        typeof message === "object" &&
+        message !== null &&
+        "type" in message &&
+        message.type === "DEHYPE_REPLAY_STOP_VIEW"
+      ) {
+        const leftAt =
+          "leftAt" in message && typeof message.leftAt === "number"
+            ? message.leftAt
+            : undefined;
+        decisionReplayRecorder.stopActiveView(leftAt);
+        sendResponse({ type: "DEHYPE_REPLAY_STOP_VIEW_RESULT" });
+        return false;
+      }
+      return handleContentMessage(message, sendResponse);
+    },
   );
   startNeedMatchAutomation();
   void resumeDomSearch();
@@ -644,5 +680,6 @@ declare global {
     __dehypeNeedMatchHistoryPatched?: boolean;
     __dehypeSkipInitialNeedMatch?: boolean;
     __dehypeStopNeedMatchAutomation?: () => void;
+    __dehypeStopDecisionReplayRecorder?: () => void;
   }
 }

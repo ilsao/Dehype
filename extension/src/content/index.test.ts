@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
+  handleContentMessage,
   rebuildCurrentProduct,
   restoreCurrentProduct,
   waitForCurrentProduct,
@@ -41,6 +42,29 @@ afterEach(() => {
 });
 
 describe("content-script integration", () => {
+  it("reports neutralization state from the page instead of side-panel memory", async () => {
+    const responses: unknown[] = [];
+    expect(handleContentMessage(
+      { type: "DEHYPE_GET_PAGE_STATE" },
+      (response) => responses.push(response),
+    )).toBe(false);
+    expect(responses.at(-1)).toMatchObject({
+      type: "DEHYPE_PAGE_STATE_RESULT",
+      neutralized: false,
+      supportedProduct: true,
+    });
+
+    await rebuildCurrentProduct();
+    handleContentMessage(
+      { type: "DEHYPE_GET_PAGE_STATE" },
+      (response) => responses.push(response),
+    );
+    expect(responses.at(-1)).toMatchObject({
+      neutralized: true,
+      supportedProduct: true,
+    });
+  });
+
   it("neutralizes once and restores the exact original DOM state", async () => {
     const name = document.querySelector("h1");
     const price = document.querySelector('[data-testid="current-price"]');
@@ -70,8 +94,7 @@ describe("content-script integration", () => {
       ?.getAttribute("data-dehype-suppressed")).toBe("hidden-container");
     expect(document.querySelector("#add-to-cart")
       ?.getAttribute("data-dehype-deemphasized")).toBe("neutral-action");
-    expect(document.querySelector("#dehype-inline-rebuild-control")?.shadowRoot)
-      .not.toBeNull();
+    expect(document.querySelector("#dehype-inline-rebuild-control")).toBeNull();
     expect(variant?.textContent).toBe("Blue");
     expect(image?.getAttribute("src")).toBe("https://example.test/product.png");
 
@@ -84,7 +107,6 @@ describe("content-script integration", () => {
     expect(document.querySelector("[data-dehype-replacement]")).toBeNull();
     expect(document.querySelector("[data-dehype-suppressed]")).toBeNull();
     expect(document.querySelector("[data-dehype-deemphasized]")).toBeNull();
-    expect(document.querySelector("#dehype-inline-rebuild-control")).toBeNull();
   });
 
   it("waits for dynamically inserted essential product data", async () => {
@@ -119,17 +141,6 @@ describe("content-script integration", () => {
       expect(document.querySelector("[data-dehype-replacement]")).toBeNull(),
     );
     expect(name?.textContent).toBe("HOT SALE Wireless Earbuds!");
-  });
-
-  it("restores from the on-page control without reopening the popup", async () => {
-    await rebuildCurrentProduct();
-    const restoreButton = document
-      .querySelector<HTMLElement>("#dehype-inline-rebuild-control")
-      ?.shadowRoot?.querySelector<HTMLButtonElement>("button");
-
-    restoreButton?.click();
-    expect(document.querySelector("[data-dehype-replacement]")).toBeNull();
-    expect(document.querySelector("[data-dehype-suppressed]")).toBeNull();
   });
 
   it("suppresses a sale heading container and a promotional cart control added by text update", async () => {

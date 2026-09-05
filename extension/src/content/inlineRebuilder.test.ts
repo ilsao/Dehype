@@ -290,7 +290,7 @@ describe("inline page rebuilder", () => {
     expect(layoutRoot.hasAttribute("data-dehype-layout-root")).toBe(false);
   });
 
-  it("exposes a keyboard-operable page restore control", () => {
+  it("keeps restore controls in the side panel instead of the product page", () => {
     document.body.innerHTML = `<h1 ${DEHYPE_ELEMENT_ID}="name-id">Mug</h1>`;
     const onRestore = vi.fn();
     const handle = applyInlineRebuild(
@@ -298,12 +298,8 @@ describe("inline page rebuilder", () => {
       { name: { id: "name-id", value: "Neutral mug" } },
       { source: "structural", findNeutralizationTargets: () => [], onRestore },
     );
-    const host = document.querySelector<HTMLElement>("#dehype-inline-rebuild-control");
-    const button = host?.shadowRoot?.querySelector<HTMLButtonElement>("button");
-
-    button?.click();
-    expect(button?.type).toBe("button");
-    expect(onRestore).toHaveBeenCalledOnce();
+    expect(document.querySelector("#dehype-inline-rebuild-control")).toBeNull();
+    expect(onRestore).not.toHaveBeenCalled();
     handle.restore();
   });
 
