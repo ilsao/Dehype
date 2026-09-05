@@ -8,6 +8,16 @@ import {
   validateRemoteAiSettings,
   type AiSettingsRemote,
 } from "../shared/aiSettings.js";
+import {
+  NEED_MATCH_STATUSES,
+  type NeedMatchAssessment,
+  type NeedMatchItem,
+  type NeedMatchResult,
+  type NeedMatchStatus,
+} from "../shared/needMatch.js";
+import {
+  validateUserNeed,
+} from "../shared/userNeed.js";
 
 const PRODUCT_FIELDS: ReadonlySet<string> = new Set(PRODUCT_INFO_FIELDS);
 
@@ -17,6 +27,14 @@ const SYSTEM_PROMPT = [
   "Preserve factual product details, prices, URLs, and stock quantities.",
   "For stock, state only the listed quantity or availability without urgency.",
   "Return every provided field exactly once in one JSON object with string values.",
+].join(" ");
+
+const NEED_MATCH_SYSTEM_PROMPT = [
+  "You are Dehype, a neutral shopping requirements evaluator.",
+  "Compare the supplied productInfo facts with userNeed without promotional language or unsupported assumptions.",
+  "Use matched only when the product facts provide enough evidence, mismatched for a clear conflict, and unknown when evidence is missing or ambiguous.",
+  "For exclude items, matched means the product does not contain the excluded feature; mismatched means it does or may contain it.",
+  "Return only one JSON object matching the requested structure.",
 ].join(" ");
 
 type JsonObject = Record<string, unknown>;
@@ -51,6 +69,10 @@ interface NeutralizeProductValuesOptions {
   fetchImpl?: ProviderFetch;
 }
 
+interface AnalyzeNeedMatchOptions extends NeutralizeProductValuesOptions {
+  userNeed: unknown;
+}
+
 export async function neutralizeProductValues({
   settings: rawSettings,
   productValues,
@@ -58,19 +80,41 @@ export async function neutralizeProductValues({
 }: NeutralizeProductValuesOptions): Promise<NeutralizedProductValues> {
   const settings = validateRemoteAiSettings(rawSettings);
   const values = validateProductValues(productValues);
-  const prompt = `${SYSTEM_PROMPT}\n\n${JSON.stringify(values, null, 2)}`;
-
-  let responseText: string;
-
-  if (settings.provider === "openai") {
-    responseText = await callOpenAi(settings, prompt, fetchImpl);
-  } else if (settings.provider === "gemini") {
-    responseText = await callGemini(settings, prompt, fetchImpl);
-  } else {
-    responseText = await callClaude(settings, prompt, fetchImpl);
-  }
+  const responseText = await requestProviderText(
+    settings,
+    SYSTEM_PROMPT,
+    JSON.stringify(values, null, 2),
+    fetchImpl,
+  );
 
   return parseNeutralizedValues(responseText, values);
+}
+
+export async function analyzeNeedMatch({
+  settings: rawSettings,
+  productValues,
+  userNeed: rawUserNeed,
+  fetchImpl = fetch,
+}: AnalyzeNeedMatchOptions): Promise<NeedMatchResult> {
+  const settings = validateRemoteAiSettings(rawSettings);
+  const values = validateProductValues(productValues);
+  const userNeed = validateUserNeed(rawUserNeed);
+  const prompt = [
+    "Evaluate this product against the user needs.",
+    "Return this exact JSON shape:",
+    '{"explanation":"neutral overall explanation","budget":{"status":"matched|mismatched|unknown","explanation":"..."}|null,"mustHave":[{"status":"matched|mismatched|unknown","explanation":"..."}],"niceToHave":[{"status":"matched|mismatched|unknown","explanation":"..."}],"exclude":[{"status":"matched|mismatched|unknown","explanation":"..."}]}',
+    "Each array must have exactly one item for each input requirement, in the same order.",
+    "Budget must be null only when both budget values are null.",
+    JSON.stringify({ productInfo: values, userNeed }, null, 2),
+  ].join("\n\n");
+  const responseText = await requestProviderText(
+    settings,
+    NEED_MATCH_SYSTEM_PROMPT,
+    prompt,
+    fetchImpl,
+  );
+
+  return parseNeedMatchResult(responseText, values, userNeed);
 }
 
 export function parseNeutralizedValues(
@@ -114,6 +158,44 @@ export function parseNeutralizedValues(
   return neutralizedValues;
 }
 
+export function parseNeedMatchResult(
+  responseText: unknown,
+  originalValues: ProductInfoValueOnly,
+  rawUserNeed: unknown,
+): NeedMatchResult {
+  const userNeed = validateUserNeed(rawUserNeed);
+  const parsed = parseJsonObject(responseText);
+
+  if (!isNonEmptyString(parsed.explanation)) {
+    throw new Error("The AI provider returned a malformed need match response.");
+  }
+
+  const hasBudget = userNeed.minBudget !== null || userNeed.maxBudget !== null;
+  const budget = hasBudget
+    ? parseAssessment(parsed.budget)
+    : parsed.budget === null
+      ? null
+      : malformedNeedMatch();
+  const mustHave = parseItems(parsed.mustHave, userNeed.mustHave);
+  const niceToHave = parseItems(parsed.niceToHave, userNeed.niceToHave);
+  const exclude = parseItems(parsed.exclude, userNeed.exclude);
+  const hardAssessments = [
+    ...(budget ? [budget] : []),
+    ...mustHave,
+    ...exclude,
+  ];
+
+  return {
+    productName: originalValues.name ?? "Unknown product",
+    status: calculateOverallStatus(hardAssessments),
+    explanation: parsed.explanation.trim(),
+    budget,
+    mustHave,
+    niceToHave,
+    exclude,
+  };
+}
+
 function validateProductValues(value: unknown): ProductInfoValueOnly {
   if (!isJsonObject(value)) {
     throw new Error("No product information was provided for analysis.");
@@ -132,6 +214,23 @@ function validateProductValues(value: unknown): ProductInfoValueOnly {
   }
 
   return productValues;
+}
+
+async function requestProviderText(
+  settings: AiSettingsRemote,
+  systemPrompt: string,
+  prompt: string,
+  fetchImpl: ProviderFetch,
+): Promise<string> {
+  if (settings.provider === "openai") {
+    return callOpenAi(settings, `${systemPrompt}\n\n${prompt}`, fetchImpl);
+  }
+
+  if (settings.provider === "gemini") {
+    return callGemini(settings, `${systemPrompt}\n\n${prompt}`, fetchImpl);
+  }
+
+  return callClaude(settings, systemPrompt, prompt, fetchImpl);
 }
 
 async function callOpenAi(
@@ -197,6 +296,7 @@ async function callGemini(
 
 async function callClaude(
   settings: AiSettingsRemote,
+  systemPrompt: string,
   prompt: string,
   fetchImpl: ProviderFetch,
 ): Promise<string> {
@@ -211,7 +311,7 @@ async function callClaude(
     body: JSON.stringify({
       model: settings.model,
       max_tokens: 1000,
-      system: SYSTEM_PROMPT,
+      system: systemPrompt,
       messages: [{ role: "user", content: prompt }],
     }),
   });
@@ -223,6 +323,80 @@ async function callClaude(
       .filter(Boolean)
       .join("\n") ?? ""
   );
+}
+
+function parseJsonObject(responseText: unknown): JsonObject {
+  if (typeof responseText !== "string" || !responseText.trim()) {
+    throw new Error("The AI provider returned an empty response.");
+  }
+
+  const trimmed = responseText.trim();
+  const fencedMatch = trimmed.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);
+  let parsed: unknown;
+
+  try {
+    parsed = JSON.parse(fencedMatch?.[1] ?? trimmed);
+  } catch {
+    throw new Error("The AI provider returned invalid JSON.");
+  }
+
+  if (!isJsonObject(parsed)) {
+    throw new Error("The AI provider response must be a JSON object.");
+  }
+
+  return parsed;
+}
+
+function parseAssessment(value: unknown): NeedMatchAssessment {
+  if (
+    !isJsonObject(value) ||
+    !isNeedMatchStatus(value.status) ||
+    !isNonEmptyString(value.explanation)
+  ) {
+    return malformedNeedMatch();
+  }
+
+  return { status: value.status, explanation: value.explanation.trim() };
+}
+
+function parseItems(value: unknown, requirements: string[]): NeedMatchItem[] {
+  if (!Array.isArray(value) || value.length !== requirements.length) {
+    return malformedNeedMatch();
+  }
+
+  return value.map((item, index) => ({
+    requirement: requirements[index]!,
+    ...parseAssessment(item),
+  }));
+}
+
+function calculateOverallStatus(
+  assessments: NeedMatchAssessment[],
+): NeedMatchStatus {
+  if (assessments.some(({ status }) => status === "mismatched")) {
+    return "mismatched";
+  }
+
+  if (
+    assessments.length === 0 ||
+    assessments.some(({ status }) => status === "unknown")
+  ) {
+    return "unknown";
+  }
+
+  return "matched";
+}
+
+function malformedNeedMatch(): never {
+  throw new Error("The AI provider returned a malformed need match response.");
+}
+
+function isNeedMatchStatus(value: unknown): value is NeedMatchStatus {
+  return NEED_MATCH_STATUSES.some((status) => status === value);
+}
+
+function isNonEmptyString(value: unknown): value is string {
+  return typeof value === "string" && Boolean(value.trim());
 }
 
 async function readProviderResponse(

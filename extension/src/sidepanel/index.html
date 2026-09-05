@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dehype User Needs</title>
+    <link rel="stylesheet" href="./sidepanel.css">
+  </head>
+  <body>
+    <header class="app-header">
+      <div class="brand">
+        <img src="../../img/Dehype.png" alt="" class="brand-icon">
+        <div>
+          <p class="brand-name">Dehype</p>
+          <h1>User needs</h1>
+        </div>
+      </div>
+      <span id="mode-label" class="mode-label">New</span>
+    </header>
+
+    <main>
+      <form id="user-need-form">
+        <fieldset id="user-need-fields">
+          <legend class="section-title">Preferences</legend>
+
+          <div class="budget-grid">
+            <label>
+              <span>Minimum budget</span>
+              <input id="min-budget" name="minBudget" type="number" min="0" step="any" inputmode="decimal" placeholder="Not set">
+            </label>
+            <label>
+              <span>Maximum budget</span>
+              <input id="max-budget" name="maxBudget" type="number" min="0" step="any" inputmode="decimal" placeholder="Not set">
+            </label>
+          </div>
+
+          <label class="text-field">
+            <span>Must have</span>
+            <textarea id="must-have" name="mustHave" rows="4" placeholder="One requirement per line"></textarea>
+          </label>
+
+          <label class="text-field">
+            <span>Nice to have</span>
+            <textarea id="nice-to-have" name="niceToHave" rows="4" placeholder="One preference per line"></textarea>
+          </label>
+
+          <label class="text-field">
+            <span>Exclude</span>
+            <textarea id="exclude" name="exclude" rows="4" placeholder="One exclusion per line"></textarea>
+          </label>
+        </fieldset>
+
+        <div class="actions">
+          <button id="save-button" class="primary-button" type="submit">Save</button>
+          <button id="edit-button" class="secondary-button" type="button" disabled hidden>Edit</button>
+          <button id="reset-button" class="danger-button" type="button">Reset</button>
+          <button id="compare-prices-button" class="secondary-button" type="button">Compare prices</button>
+        </div>
+      </form>
+
+      <section id="summary-section" class="summary-section" aria-labelledby="summary-heading" hidden>
+        <div class="summary-header">
+          <h2 id="summary-heading">Current preview</h2>
+          <span id="summary-state">Saved</span>
+        </div>
+
+        <dl class="budget-summary">
+          <div>
+            <dt>Minimum</dt>
+            <dd id="summary-min-budget">Not set</dd>
+          </div>
+          <div>
+            <dt>Maximum</dt>
+            <dd id="summary-max-budget">Not set</dd>
+          </div>
+        </dl>
+
+        <div class="summary-list">
+          <h3>Must have</h3>
+          <ul id="summary-must-have"></ul>
+        </div>
+        <div class="summary-list">
+          <h3>Nice to have</h3>
+          <ul id="summary-nice-to-have"></ul>
+        </div>
+        <div class="summary-list exclude-list">
+          <h3>Exclude</h3>
+          <ul id="summary-exclude"></ul>
+        </div>
+      </section>
+
+      <section id="need-match-section" class="need-match-section" aria-labelledby="need-match-heading" hidden>
+        <div class="need-match-header">
+          <h2 id="need-match-heading">Need Match Analysis</h2>
+          <span id="need-match-status" class="match-badge">Analyzing</span>
+        </div>
+        <p id="need-match-product" class="need-match-product"></p>
+        <p id="need-match-explanation" class="need-match-explanation"></p>
+        <div id="need-match-details" class="need-match-details"></div>
+      </section>
+
+      <section id="price-comparison-section" class="price-comparison-section" aria-labelledby="price-comparison-heading" hidden>
+        <div class="price-comparison-header">
+          <h2 id="price-comparison-heading">Price comparison</h2>
+          <button id="return-to-needs" class="secondary-button" type="button">Back to user needs</button>
+        </div>
+        <p id="price-status" class="price-status" role="status" aria-live="polite"></p>
+        <div class="price-chart-heading"><span>Price distribution</span><span id="price-budget-label"></span></div>
+        <div class="price-chart-frame">
+          <div class="price-axis-y">Products</div>
+          <div id="price-chart" class="price-chart" aria-label="Price distribution histogram"></div>
+          <div class="price-axis-x">Price range</div>
+        </div>
+        <div class="price-summary-heading">Price statistics</div>
+        <div class="price-summary-grid">
+          <div><span>Minimum</span><strong id="price-min"></strong></div>
+          <div><span>Median</span><strong id="price-median"></strong></div>
+          <div><span>Maximum</span><strong id="price-max"></strong></div>
+        </div>
+      </section>
+    </main>
+
+    <footer id="status" role="status" aria-live="polite">Loading saved needs...</footer>
+    <script type="module" src="./main.ts"></script>
+  </body>
+</html>

@@ -13,16 +13,23 @@ interface TabsApi {
 }
 
 interface ScriptingApi {
-  executeScript(injection: {
-    target: { tabId: number };
-    files: string[];
-  }): Promise<unknown>;
+  executeScript(
+    injection:
+      | {
+          target: { tabId: number };
+          files: string[];
+        }
+      | {
+          target: { tabId: number };
+          func: () => void;
+        },
+  ): Promise<unknown>;
 }
 
 export async function sendMessageToActiveTab<Response>(
   tabsApi: TabsApi,
+  scriptingApi: ScriptingApi | undefined,
   message: unknown,
-  scriptingApi: ScriptingApi | undefined = globalThis.chrome?.scripting,
 ): Promise<Response> {
   const [activeTab] = await tabsApi.query({ active: true, currentWindow: true });
 
@@ -39,6 +46,12 @@ export async function sendMessageToActiveTab<Response>(
     }
 
     try {
+      await scriptingApi.executeScript({
+        target: { tabId: activeTab.id },
+        func: () => {
+          window.__dehypeSkipInitialNeedMatch = true;
+        },
+      });
       await scriptingApi.executeScript({
         target: { tabId: activeTab.id },
         files: [CONTENT_SCRIPT_BUNDLE],

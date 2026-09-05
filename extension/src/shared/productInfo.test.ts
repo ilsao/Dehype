@@ -8,6 +8,7 @@ import type {
 } from "./productInfo";
 import {
   isContentScriptRequest,
+  isAnalyzeNeedMatchValuesRequest,
   isNeutralizeProductValuesResponse,
   isNeutralizeProductValuesRequest,
   isRebuildCurrentProductResponse,
@@ -60,6 +61,18 @@ describe("extension message boundaries", () => {
     expect(
       isNeutralizeProductValuesRequest({
         type: "DEHYPE_NEUTRALIZE_VALUES",
+        productValues: { name: "Product", id: "dom-node" },
+      }),
+    ).toBe(false);
+    expect(
+      isAnalyzeNeedMatchValuesRequest({
+        type: "DEHYPE_ANALYZE_NEED_MATCH_VALUES",
+        productValues: { name: "Product", currentPrice: "NT$429" },
+      }),
+    ).toBe(true);
+    expect(
+      isAnalyzeNeedMatchValuesRequest({
+        type: "DEHYPE_ANALYZE_NEED_MATCH_VALUES",
         productValues: { name: "Product", id: "dom-node" },
       }),
     ).toBe(false);

@@ -172,6 +172,11 @@ button:focus-visible {
   border-top: 1px solid #d9e2ec;
 }
 
+#compare-btn {
+  width: calc(100% - 28px);
+  margin: 0 14px 12px;
+}
+
 .action-button {
   width: 100%;
 }

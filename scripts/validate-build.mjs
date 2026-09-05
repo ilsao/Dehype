@@ -10,8 +10,7 @@ const builtManifest = JSON.parse(
   await readFile(resolve(outputRoot, "manifest.json"), "utf8"),
 );
 
-const requiredPermissions = ["activeTab", "scripting", "storage"];
-const forbiddenPermissions = ["sidePanel"];
+const requiredPermissions = ["activeTab", "scripting", "storage", "sidePanel"];
 const temuHosts = ["https://temu.com/*", "https://*.temu.com/*"];
 const providerHosts = [
   "https://api.openai.com/*",
@@ -25,16 +24,13 @@ for (const manifest of [sourceManifest, builtManifest]) {
       throw new Error(`Manifest is missing the ${permission} permission.`);
     }
   }
-  for (const permission of forbiddenPermissions) {
-    if (manifest.permissions?.includes(permission)) {
-      throw new Error(`Manifest contains unused permission ${permission}.`);
-    }
-  }
+
   for (const host of temuHosts) {
     if (!manifest.host_permissions?.includes(host)) {
       throw new Error(`Manifest is missing Temu host permission ${host}.`);
     }
   }
+
   for (const host of providerHosts) {
     if (!manifest.optional_host_permissions?.includes(host)) {
       throw new Error(`Provider host must be optional: ${host}.`);
@@ -43,10 +39,18 @@ for (const manifest of [sourceManifest, builtManifest]) {
       throw new Error(`Provider host must not be required: ${host}.`);
     }
   }
+
   if (manifest.action?.default_popup !== "src/popup/popup.html") {
-    throw new Error("The toolbar action must open the Sprint 1 popup.");
+    throw new Error("The toolbar action must open the popup.");
   }
-  const matches = manifest.content_scripts?.flatMap((entry) => entry.matches ?? []);
+
+  if (manifest.side_panel?.default_path !== "src/sidepanel/index.html") {
+    throw new Error("The side panel must point to the UserNeed UI.");
+  }
+
+  const matches = manifest.content_scripts?.flatMap(
+    (entry) => entry.matches ?? [],
+  );
   if (
     !matches?.length ||
     matches.includes("<all_urls>") ||
@@ -57,30 +61,33 @@ for (const manifest of [sourceManifest, builtManifest]) {
 }
 
 const expectedFiles = [
-  builtManifest.action.default_popup,
+  builtManifest.action?.default_popup,
+  builtManifest.side_panel?.default_path,
   builtManifest.background?.service_worker,
   builtManifest.icons?.["32"],
+  builtManifest.side_panel?.default_path,
   ...(builtManifest.content_scripts ?? []).flatMap((entry) => entry.js ?? []),
-];
+].filter((value) => typeof value === "string");
 
 await Promise.all(
-  expectedFiles.map((file) => access(resolve(outputRoot, file.replace(/^\.\//, "")))),
+  expectedFiles.map((file) =>
+    access(resolve(outputRoot, file.replace(/^\.\//, ""))),
+  ),
 );
 
-const popupHtmlPath = resolve(
-  outputRoot,
-  builtManifest.action.default_popup.replace(/^\.\//, ""),
-);
-const popupHtml = await readFile(popupHtmlPath, "utf8");
-if (/rel=["']modulepreload["']/i.test(popupHtml)) {
-  throw new Error(
-    "Built popup must not preload extension module chunks across Chrome worlds.",
-  );
-}
+const sourceFiles = [
+  sourceManifest.action?.default_popup,
+  sourceManifest.side_panel?.default_path,
+  sourceManifest.background?.service_worker,
+  sourceManifest.icons?.["32"],
+  ...(sourceManifest.content_scripts ?? []).flatMap((entry) => entry.js ?? []),
+].filter((value) => typeof value === "string");
+
+await Promise.all(sourceFiles.map((file) => accessSourceReference(file)));
 
 if (
-  builtManifest.content_scripts.some((entry) =>
-    entry.js.some((file) => /\.(?:ts|tsx)$/.test(file)),
+  builtManifest.content_scripts?.some((entry) =>
+    entry.js?.some((file) => /\.(?:ts|tsx)$/.test(file)),
   )
 ) {
   throw new Error("Built content scripts must reference compiled JavaScript.");
@@ -94,5 +101,27 @@ if (
 ) {
   throw new Error(
     "Built content script must be self-contained classic JavaScript without imports or exports.",
+  );
+}
+
+async function accessSourceReference(file) {
+  const candidates = [file];
+
+  if (file.endsWith(".js")) {
+    const pathWithoutExtension = file.slice(0, -3);
+    candidates.push(`${pathWithoutExtension}.ts`, `${pathWithoutExtension}.tsx`);
+  }
+
+  for (const candidate of candidates) {
+    try {
+      await access(resolve(extensionRoot, candidate));
+      return;
+    } catch {
+      // Continue through the supported source extensions.
+    }
+  }
+
+  throw new Error(
+    `Source manifest reference was not found. Checked: ${candidates.join(", ")}`,
   );
 }

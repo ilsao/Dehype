@@ -5,7 +5,11 @@ import {
   AI_SETTINGS_KEY,
   AI_SETTINGS_VERSION,
 } from "../shared/aiSettings.js";
-import { neutralizeWithSavedSettings } from "./background.js";
+import {
+  analyzeNeedMatchWithSavedSettings,
+  generateKeywordWithSavedSettings,
+  neutralizeWithSavedSettings,
+} from "./background.ts";
 
 const productValues = {
   name: "HOT SALE Wireless Earbuds!",
@@ -13,15 +17,50 @@ const productValues = {
   stockAmount: "Only 3 left",
 };
 
-function storage(settings) {
+const remoteSettings = {
+  version: AI_SETTINGS_VERSION,
+  state: "remote",
+  provider: "openai",
+  model: "gpt-test",
+  apiKey: "key",
+  consentVersion: AI_REMOTE_CONSENT_VERSION,
+};
+
+const savedUserNeed = {
+  minBudget: 0,
+  maxBudget: 100,
+  mustHave: ["wireless"],
+  niceToHave: [],
+  exclude: [],
+};
+
+function storage(settings, extraValues = {}) {
+  const values = {
+    ...(settings ? { [AI_SETTINGS_KEY]: settings } : {}),
+    ...extraValues,
+  };
   return {
-    get: vi.fn(async () => (settings ? { [AI_SETTINGS_KEY]: settings } : {})),
-    set: vi.fn(async () => undefined),
-    remove: vi.fn(async () => undefined),
+    values,
+    get: vi.fn(async () => ({ ...values })),
+    set: vi.fn(async (items) => {
+      Object.assign(values, items);
+    }),
+    remove: vi.fn(async (key) => {
+      delete values[key];
+    }),
   };
 }
 
 describe("background neutralization coordinator", () => {
+  it("uses a local keyword when AI is not configured", async () => {
+    await expect(
+      generateKeywordWithSavedSettings(
+        "Sparkling Cat Eye Gel Polish - Magnetic Glitter",
+        { storage: storage() },
+      ),
+    ).resolves.toBe("Sparkling Cat Eye Gel Polish Magnetic");
+  });
+
   it("preserves original values for structural cleanup without AI settings", async () => {
     await expect(
       neutralizeWithSavedSettings(productValues, { storage: storage() }),
@@ -32,7 +71,7 @@ describe("background neutralization coordinator", () => {
         stockAmount: "Only 3 left",
       },
       source: "structural",
-      fallbackReason: "Configure and consent to an AI provider to analyze product wording.",
+      fallbackReason: "Open Dehype and save your AI provider, model, and API key.",
     });
   });
 
@@ -43,14 +82,7 @@ describe("background neutralization coordinator", () => {
     }));
     await expect(
       neutralizeWithSavedSettings(productValues, {
-        storage: storage({
-          version: AI_SETTINGS_VERSION,
-          state: "remote",
-          provider: "openai",
-          model: "gpt-test",
-          apiKey: "key",
-          consentVersion: AI_REMOTE_CONSENT_VERSION,
-        }),
+        storage: storage(remoteSettings),
         fetchImpl,
       }),
     ).resolves.toEqual({
@@ -82,14 +114,7 @@ describe("background neutralization coordinator", () => {
       }),
     }));
     const result = await neutralizeWithSavedSettings(factualValues, {
-      storage: storage({
-        version: AI_SETTINGS_VERSION,
-        state: "remote",
-        provider: "openai",
-        model: "gpt-test",
-        apiKey: "key",
-        consentVersion: AI_REMOTE_CONSENT_VERSION,
-      }),
+      storage: storage(remoteSettings),
       fetchImpl,
     });
 
@@ -106,14 +131,7 @@ describe("background neutralization coordinator", () => {
       json: async () => ({ output_text: "not json" }),
     }));
     const result = await neutralizeWithSavedSettings(productValues, {
-      storage: storage({
-        version: AI_SETTINGS_VERSION,
-        state: "remote",
-        provider: "openai",
-        model: "gpt-test",
-        apiKey: "key",
-        consentVersion: AI_REMOTE_CONSENT_VERSION,
-      }),
+      storage: storage(remoteSettings),
       fetchImpl,
     });
     expect(result).toMatchObject({
@@ -125,5 +143,61 @@ describe("background neutralization coordinator", () => {
       source: "structural",
     });
     expect(result.fallbackReason).toContain("invalid JSON");
+  });
+
+  it("does not trigger Need Match storage writes during Neutralize", async () => {
+    const testStorage = storage(remoteSettings, { userNeed: savedUserNeed });
+    const fetchImpl = vi.fn(async () => ({
+      ok: true,
+      json: async () => ({ output_text: '{"name":"Wireless Earbuds"}' }),
+    }));
+
+    await neutralizeWithSavedSettings(productValues, {
+      storage: testStorage,
+      fetchImpl,
+    });
+
+    expect(testStorage.values.needMatchAnalysis).toBeUndefined();
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
+  it("runs Need Match only through the dedicated message coordinator", async () => {
+    const testStorage = storage(remoteSettings, { userNeed: savedUserNeed });
+    const fetchImpl = vi.fn(async () => ({
+      ok: true,
+      json: async () => ({
+        output_text: JSON.stringify({
+          explanation: "The product facts can be compared with the saved needs.",
+          budget: {
+            status: "matched",
+            explanation: "The price is in range.",
+          },
+          mustHave: [
+            {
+              status: "matched",
+              explanation: "Wireless is in the product name.",
+            },
+          ],
+          niceToHave: [],
+          exclude: [],
+        }),
+      }),
+    }));
+
+    await expect(
+      analyzeNeedMatchWithSavedSettings(productValues, {
+        storage: testStorage,
+        fetchImpl,
+        createAnalysisId: () => "background-analysis-1",
+      }),
+    ).resolves.toEqual({
+      type: "DEHYPE_ANALYZE_NEED_MATCH_VALUES_RESULT",
+      ok: true,
+    });
+    expect(testStorage.values.needMatchAnalysis).toMatchObject({
+      state: "success",
+      analysisId: "background-analysis-1",
+      result: { status: "matched" },
+    });
   });
 });
