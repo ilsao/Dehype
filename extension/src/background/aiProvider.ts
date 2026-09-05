@@ -5,8 +5,8 @@ import {
   type ProductInfoValueOnly,
 } from "../shared/productInfo.js";
 import {
-  validateAiSettings,
-  type AiSettings,
+  validateRemoteAiSettings,
+  type AiSettingsRemote,
 } from "../shared/aiSettings.js";
 import {
   NEED_MATCH_STATUSES,
@@ -25,7 +25,8 @@ const SYSTEM_PROMPT = [
   "You are Dehype, a shopping assistant that removes persuasive wording.",
   "Neutralize urgency, scarcity, social pressure, and promotional language.",
   "Preserve factual product details, prices, URLs, and stock quantities.",
-  "Return only one JSON object with the same field names and string values.",
+  "For stock, state only the listed quantity or availability without urgency.",
+  "Return every provided field exactly once in one JSON object with string values.",
 ].join(" ");
 
 const NEED_MATCH_SYSTEM_PROMPT = [
@@ -77,7 +78,7 @@ export async function neutralizeProductValues({
   productValues,
   fetchImpl = fetch,
 }: NeutralizeProductValuesOptions): Promise<NeutralizedProductValues> {
-  const settings = validateAiSettings(rawSettings);
+  const settings = validateRemoteAiSettings(rawSettings);
   const values = validateProductValues(productValues);
   const responseText = await requestProviderText(
     settings,
@@ -95,7 +96,7 @@ export async function analyzeNeedMatch({
   userNeed: rawUserNeed,
   fetchImpl = fetch,
 }: AnalyzeNeedMatchOptions): Promise<NeedMatchResult> {
-  const settings = validateAiSettings(rawSettings);
+  const settings = validateRemoteAiSettings(rawSettings);
   const values = validateProductValues(productValues);
   const userNeed = validateUserNeed(rawUserNeed);
   const prompt = [
@@ -216,7 +217,7 @@ function validateProductValues(value: unknown): ProductInfoValueOnly {
 }
 
 async function requestProviderText(
-  settings: AiSettings,
+  settings: AiSettingsRemote,
   systemPrompt: string,
   prompt: string,
   fetchImpl: ProviderFetch,
@@ -233,7 +234,7 @@ async function requestProviderText(
 }
 
 async function callOpenAi(
-  settings: AiSettings,
+  settings: AiSettingsRemote,
   prompt: string,
   fetchImpl: ProviderFetch,
 ): Promise<string> {
@@ -262,7 +263,7 @@ async function callOpenAi(
 }
 
 async function callGemini(
-  settings: AiSettings,
+  settings: AiSettingsRemote,
   prompt: string,
   fetchImpl: ProviderFetch,
 ): Promise<string> {
@@ -294,7 +295,7 @@ async function callGemini(
 }
 
 async function callClaude(
-  settings: AiSettings,
+  settings: AiSettingsRemote,
   systemPrompt: string,
   prompt: string,
   fetchImpl: ProviderFetch,

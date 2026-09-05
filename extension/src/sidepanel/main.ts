@@ -13,7 +13,6 @@ import {
   NEED_MATCH_STORAGE_KEY,
   validateNeedMatchAnalysisState,
   type NeedMatchAnalysisState,
-  type NeedMatchAssessment,
   type NeedMatchItem,
   type NeedMatchStatus,
 } from "../shared/needMatch.js";
@@ -235,15 +234,15 @@ function renderNeedMatchAnalysis(analysis: NeedMatchAnalysisState): void {
 
   const { result } = analysis;
   setMatchStatus(needMatchStatus, result.status);
-  needMatchProduct.textContent = result.productName;
+  needMatchProduct.textContent = compactProductName(result.productName);
   needMatchExplanation.textContent = result.explanation;
-  appendAssessmentGroup(
+  appendAssessmentRows(
     "Budget",
-    result.budget ? [{ requirement: "Saved budget range", ...result.budget }] : [],
+    result.budget ? [{ requirement: "Budget", ...result.budget }] : [],
   );
-  appendAssessmentGroup("Must have", result.mustHave);
-  appendAssessmentGroup("Nice to have", result.niceToHave);
-  appendAssessmentGroup("Exclude", result.exclude);
+  appendAssessmentRows("Must have", result.mustHave);
+  appendAssessmentRows("Nice to have", result.niceToHave);
+  appendAssessmentRows("Exclude", result.exclude);
 }
 
 function renderNeedMatchError(message: string): void {
@@ -263,54 +262,70 @@ function hideNeedMatchAnalysis(): void {
   needMatchDetails.replaceChildren();
 }
 
-function appendAssessmentGroup(title: string, items: NeedMatchItem[]): void {
-  const group = document.createElement("section");
-  group.className = "assessment-group";
-  const heading = document.createElement("h3");
-  heading.textContent = title;
-  group.append(heading);
+function appendAssessmentRows(title: string, items: NeedMatchItem[]): void {
+  const list = document.createElement("ul");
+  list.className = "assessment-list";
 
   if (items.length === 0) {
-    const empty = document.createElement("p");
-    empty.className = "assessment-explanation";
-    empty.textContent = "Not set";
-    group.append(empty);
+    list.append(createAssessmentRow(title, "unknown"));
   } else {
-    const list = document.createElement("ul");
-    list.className = "assessment-list";
-
     for (const item of items) {
-      list.append(createAssessmentItem(item.requirement, item));
+      list.append(createAssessmentRow(item.requirement, item.status));
     }
-
-    group.append(list);
   }
 
-  needMatchDetails.append(group);
+  needMatchDetails.append(list);
 }
 
-function createAssessmentItem(
-  requirement: string,
-  assessment: NeedMatchAssessment,
+function createAssessmentRow(
+  label: string,
+  matchStatus: NeedMatchStatus,
 ): HTMLLIElement {
   const item = document.createElement("li");
-  item.className = "assessment-item";
-  const requirementElement = document.createElement("p");
-  requirementElement.className = "assessment-requirement";
-  requirementElement.textContent = requirement;
-  const statusElement = document.createElement("span");
-  statusElement.className = "assessment-status";
-  setMatchStatus(statusElement, assessment.status);
-  const explanation = document.createElement("p");
-  explanation.className = "assessment-explanation";
-  explanation.textContent = assessment.explanation;
-  item.append(requirementElement, statusElement, explanation);
+  item.className = "assessment-row";
+  item.dataset.matchStatus = matchStatus;
+  const icon = document.createElement("span");
+  icon.className = "assessment-icon";
+  icon.textContent = statusIcon(matchStatus);
+  icon.dataset.matchStatus = matchStatus;
+  icon.setAttribute("aria-hidden", "true");
+  const labelElement = document.createElement("span");
+  labelElement.className = "assessment-label";
+  labelElement.textContent = label;
+  item.setAttribute("aria-label", `${label}: ${matchStatus}`);
+  item.append(icon, labelElement);
   return item;
 }
 
 function setMatchStatus(element: HTMLElement, matchStatus: NeedMatchStatus): void {
   element.textContent = matchStatus;
   element.dataset.matchStatus = matchStatus;
+}
+
+function statusIcon(matchStatus: NeedMatchStatus): string {
+  if (matchStatus === "matched") return "✓";
+  if (matchStatus === "mismatched") return "✕";
+  return "?";
+}
+
+function compactProductName(productName: string): string {
+  const compacted = productName
+    .replace(/\b2D\s+Flat\s+Printing\b/gi, " ")
+    .replace(/\b2D\s+Flat\b/gi, " ")
+    .replace(/\bWomen's\b/gi, " ")
+    .replace(/\bLadies\b/gi, " ")
+    .replace(/\bElegant\s+Comfortable\b/gi, " ")
+    .replace(/\bDoll\s+Shirt\b/gi, " ")
+    .replace(/\bChic\b/gi, " ")
+    .replace(/\bTop\s+Fun\b/gi, " ")
+    .replace(/\bPattern\s+Design\b/gi, " ")
+    .replace(/\bMulticolor\s+Casual\s+Party\s+Travel\s+Birthday\b/gi, " ")
+    .replace(/\b(3\/4\s+Sleeve)\s+\1\b/gi, "$1")
+    .replace(/[,\s]+/g, " ")
+    .trim();
+  const words = (compacted || productName).split(/\s+/).filter(Boolean);
+
+  return words.slice(0, 7).join(" ");
 }
 
 function setEditing(editing: boolean): void {

@@ -87,6 +87,26 @@ button:disabled {
   gap: 10px;
 }
 
+#remote-settings {
+  display: grid;
+  gap: 11px;
+}
+
+#consent-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-weight: 500;
+  line-height: 1.4;
+}
+
+#consent-row input {
+  flex: 0 0 auto;
+  width: 16px;
+  height: 16px;
+  margin-top: 1px;
+}
+
 label {
   color: #334e68;
   font-size: 12px;
@@ -156,32 +176,6 @@ button:focus-visible {
   width: 100%;
 }
 
-#model-result {
-  padding: 0 14px 12px;
-}
-
-#model-result h2 {
-  margin: 0 0 7px;
-  color: #334e68;
-  font-size: 12px;
-}
-
-#model-output {
-  max-height: 150px;
-  overflow: auto;
-  margin: 0;
-  border: 1px solid #d9e2ec;
-  border-radius: 6px;
-  padding: 9px;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-  color: #102a43;
-  background: #f5f7fa;
-  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
-  font-size: 11px;
-  line-height: 1.4;
-}
-
 #status-row {
   display: flex;
   align-items: flex-start;
@@ -192,6 +186,10 @@ button:focus-visible {
   background: #f5f7fa;
   font-size: 12px;
   line-height: 1.4;
+}
+
+#status-row[hidden] {
+  display: none;
 }
 
 #status-indicator {

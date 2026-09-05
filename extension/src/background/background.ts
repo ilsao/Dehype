@@ -1,79 +1,140 @@
 import { runNeutralizeWorkflow } from "./neutralizeWorkflow.js";
-import { neutralizeValuesLocally } from "./localNeutralizer.js";
+import { runNeedMatchWorkflow } from "./needMatchWorkflow.js";
+import type { ProviderFetch } from "./aiProvider.js";
+import { getAiSettingsStatus } from "../shared/aiSettings.js";
 import {
-  getAiSettingsStatus,
-} from "../shared/aiSettings.js";
-import type {
-  NeutralizeProductValuesRequest,
-  ProductInfoValueOnly,
+  isAnalyzeNeedMatchValuesRequest,
+  isNeutralizeProductValuesRequest,
+  type AnalyzeNeedMatchValuesResponse,
+  type NeutralizeProductValuesResponse,
+  type NeutralizeSource,
+  type ProductInfoValueOnly,
 } from "../shared/productInfo.js";
 
-console.log("[Dehype] Background service worker started.");
+interface NeutralizeWorkflowDependencies {
+  storage?: chrome.storage.StorageArea;
+  fetchImpl?: ProviderFetch;
+  createAnalysisId?: () => string;
+}
 
-chrome.runtime.onMessage.addListener((message: unknown, _sender, sendResponse) => {
-  if (isMessageType(message, "getStatus")) {
-    void getAiSettingsStatus(chrome.storage.local).then(sendResponse);
-    return true;
-  }
+interface NeutralizeWorkflowResult {
+  productValues: ProductInfoValueOnly;
+  source: NeutralizeSource;
+  fallbackReason?: string;
+}
 
-  if (isNeutralizeProductValuesRequest(message)) {
+if (typeof chrome !== "undefined" && chrome.runtime?.onMessage) {
+  chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+    if (isRecord(message) && message.type === "getStatus") {
+      void getAiSettingsStatus(chrome.storage.local).then(sendResponse);
+      return true;
+    }
+
+    if (isAnalyzeNeedMatchValuesRequest(message)) {
+      void analyzeNeedMatchWithSavedSettings(message.productValues)
+        .then((response) => sendResponse(response))
+        .catch((error: unknown) =>
+          sendResponse({
+            type: "DEHYPE_ANALYZE_NEED_MATCH_VALUES_RESULT",
+            ok: false,
+            message: error instanceof Error ? error.message : String(error),
+          }),
+        );
+      return true;
+    }
+
+    if (!isNeutralizeProductValuesRequest(message)) return false;
+
     void neutralizeWithSavedSettings(message.productValues)
-      .then((productValues) =>
-        sendResponse({
+      .then(({ productValues, source, fallbackReason }) => {
+        const response: NeutralizeProductValuesResponse = {
           type: "DEHYPE_NEUTRALIZE_VALUES_RESULT",
           productValues,
-        }),
-      )
-      .catch((error) =>
+          source,
+          ...(fallbackReason ? { fallbackReason } : {}),
+        };
+        sendResponse(response);
+      })
+      .catch((error: unknown) =>
         sendResponse({
           type: "DEHYPE_NEUTRALIZE_PRODUCT_INFO_ERROR",
           message: error instanceof Error ? error.message : String(error),
         }),
       );
     return true;
-  }
-
-  if (isLocalNeutralizeRequest(message)) {
-    sendResponse({
-      type: "DEHYPE_NEUTRALIZE_VALUES_RESULT",
-      productValues: neutralizeValuesLocally(message.productValues ?? {}),
-    });
-    return false;
-  }
-
-  return false;
-});
-
-async function neutralizeWithSavedSettings(
-  productValues: ProductInfoValueOnly,
-) {
-  return runNeutralizeWorkflow({
-    productValues,
-    storage: chrome.storage.local,
   });
 }
 
-function isNeutralizeProductValuesRequest(
-  message: unknown,
-): message is NeutralizeProductValuesRequest {
-  return (
-    isRecord(message) &&
-    message.type === "DEHYPE_NEUTRALIZE_VALUES" &&
-    typeof message.productValues === "object" &&
-    message.productValues !== null
-  );
+export async function neutralizeWithSavedSettings(
+  productValues: ProductInfoValueOnly,
+  dependencies: NeutralizeWorkflowDependencies = {},
+): Promise<NeutralizeWorkflowResult> {
+  const storage = dependencies.storage ?? chrome.storage.local;
+  try {
+    const neutralizedValues = await runNeutralizeWorkflow({
+      productValues,
+      storage,
+      ...(dependencies.fetchImpl ? { fetchImpl: dependencies.fetchImpl } : {}),
+    });
+
+    return {
+      productValues: overlayModelValues(productValues, neutralizedValues),
+      source: "model",
+    };
+  } catch (error) {
+    return {
+      productValues: { ...productValues },
+      source: "structural",
+      fallbackReason:
+        error instanceof Error
+          ? error.message
+          : "The model response could not be used.",
+    };
+  }
 }
 
-function isLocalNeutralizeRequest(
-  message: unknown,
-): message is { type: "DEHYPE_NEUTRALIZE_VALUES_LOCALLY"; productValues?: ProductInfoValueOnly } {
-  return isMessageType(message, "DEHYPE_NEUTRALIZE_VALUES_LOCALLY");
+export async function analyzeNeedMatchWithSavedSettings(
+  productValues: ProductInfoValueOnly,
+  dependencies: NeutralizeWorkflowDependencies = {},
+): Promise<AnalyzeNeedMatchValuesResponse> {
+  const storage = dependencies.storage ?? chrome.storage.local;
+  const analysis = await runNeedMatchWorkflow({
+    productValues,
+    storage,
+    ...(dependencies.fetchImpl ? { fetchImpl: dependencies.fetchImpl } : {}),
+    ...(dependencies.createAnalysisId
+      ? { createAnalysisId: dependencies.createAnalysisId }
+      : {}),
+  });
+
+  return {
+    type: "DEHYPE_ANALYZE_NEED_MATCH_VALUES_RESULT",
+    ok: analysis.state === "success",
+    ...(analysis.state === "error" ? { message: analysis.message } : {}),
+  };
 }
 
-function isMessageType(message: unknown, type: string): message is Record<string, unknown> {
-  return isRecord(message) && message.type === type;
+function overlayModelValues(
+  productValues: ProductInfoValueOnly,
+  modelValues: ProductInfoValueOnly,
+): ProductInfoValueOnly {
+  const modelOverlay: ProductInfoValueOnly = {
+    ...productValues,
+    ...modelValues,
+  };
+
+  for (const field of ["originalPrice", "currentPrice", "image"] as const) {
+    const value = productValues[field];
+    if (typeof value === "string") {
+      modelOverlay[field] = value;
+    } else {
+      delete modelOverlay[field];
+    }
+  }
+
+  return modelOverlay;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null;
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

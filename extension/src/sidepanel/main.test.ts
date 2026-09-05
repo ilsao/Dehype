@@ -177,9 +177,41 @@ describe("UserNeed Side Panel", () => {
     await vi.waitFor(() => {
       expect(element("#need-match-section").hidden).toBe(false);
       expect(element("#need-match-status").textContent).toBe("matched");
-      expect(element("#need-match-product").textContent).toBe("Laptop");
+      expect(element("#need-match-product").textContent).toBe(
+        "Plus Size Floral Paisley 3/4 Sleeve Tunic",
+      );
       expect(element("#need-match-details").textContent).toContain("USB-C");
     });
+    expect(element("#need-match-product").textContent).not.toContain(
+      "Multicolor Casual Party Travel Birthday",
+    );
+    expect(element("#need-match-details").textContent).toContain("✓Budget");
+    expect(element("#need-match-details").textContent).toContain("✓USB-C");
+    expect(element("#need-match-details").textContent).toContain("✕Quiet fan");
+    expect(element("#need-match-details").textContent).toContain(
+      "?Subscription",
+    );
+    expect(element("#need-match-details").textContent).not.toContain(
+      "The price is within budget.",
+    );
+    expect(element("#need-match-details").textContent).not.toContain(
+      "USB-C is listed.",
+    );
+    expect(
+      document.querySelector<HTMLElement>(
+        '.assessment-row[data-match-status="matched"]',
+      ),
+    ).not.toBeNull();
+    expect(
+      document.querySelector<HTMLElement>(
+        '.assessment-row[data-match-status="mismatched"]',
+      ),
+    ).not.toBeNull();
+    expect(
+      document.querySelector<HTMLElement>(
+        '.assessment-row[data-match-status="unknown"]',
+      ),
+    ).not.toBeNull();
 
     storageChangeListener(
       {
@@ -205,7 +237,8 @@ function successAnalysis(analysisId: string) {
     state: "success",
     analysisId,
     result: {
-      productName: "Laptop",
+      productName:
+        "2D Flat Printing Plus Size Floral Paisley Women's Elegant Comfortable 3/4 Sleeve Doll Shirt Ladies Chic 3/4 Sleeve Tunic Top Fun Floral Pattern Design Multicolor Casual Party Travel Birthday, 2D Flat",
       status: "matched",
       explanation: "The required facts match.",
       budget: {
@@ -219,8 +252,20 @@ function successAnalysis(analysisId: string) {
           explanation: "USB-C is listed.",
         },
       ],
-      niceToHave: [],
-      exclude: [],
+      niceToHave: [
+        {
+          requirement: "Quiet fan",
+          status: "mismatched",
+          explanation: "Noise is not discussed.",
+        },
+      ],
+      exclude: [
+        {
+          requirement: "Subscription",
+          status: "unknown",
+          explanation: "Subscription is not specified.",
+        },
+      ],
     },
   };
 }

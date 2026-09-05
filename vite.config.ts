@@ -26,12 +26,12 @@ function copyExtensionMetadata(): Plugin {
         manifest.background.service_worker = "assets/background.js";
       }
 
-      manifest.content_scripts = [
-        {
-          matches: ["<all_urls>"],
+      manifest.content_scripts = (manifest.content_scripts ?? []).map(
+        (entry: { matches: string[] }) => ({
+          ...entry,
           js: ["assets/content.js"],
-        },
-      ];
+        }),
+      );
 
       await Promise.all([
         writeFile(
@@ -58,8 +58,7 @@ export default defineConfig({
       input: {
         popup: resolve(extensionRoot, "src/popup/popup.html"),
         sidepanel: resolve(extensionRoot, "src/sidepanel/index.html"),
-        background: resolve(extensionRoot, "src/background/background.js"),
-        content: resolve(extensionRoot, "src/content/index.ts"),
+        background: resolve(extensionRoot, "src/background/background.ts"),
       },
       preserveEntrySignatures: "strict",
       output: {
