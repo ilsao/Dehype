@@ -9,6 +9,7 @@
   "scripts": {
     "lint": "eslint .",
     "test": "vitest run",
+    "test:watch": "vitest",
     "build": "tsc --noEmit && vite build && npm run validate:build",
     "validate:build": "node scripts/validate-build.mjs"
   },
