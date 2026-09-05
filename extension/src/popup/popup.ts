@@ -1,59 +1,47 @@
 import {
+  AI_REMOTE_CONSENT_VERSION,
+  AI_SETTINGS_VERSION,
   defaultModelForProvider,
   loadAiSettings,
+  requestProviderPermission,
+  revokeUnusedProviderPermissions,
   saveAiSettings,
+  type AiSettings,
 } from "../shared/aiSettings.js";
-import {
-  productInfoValues,
-  sendMessageToActiveTab,
-} from "./popupActions.js";
-
-interface PopupActionResponse {
-  ok: boolean;
-  error?: string;
-  productInfo?: unknown;
-}
+import { sendMessageToActiveTab } from "./popupActions.js";
 
 type StatusState = "neutral" | "success" | "error";
 
-const closeButton = document.querySelector<HTMLButtonElement>("#close-btn")!;
-const settingsForm = document.querySelector<HTMLFormElement>("#settings-form")!;
-const providerInput = document.querySelector<HTMLSelectElement>("#provider")!;
-const modelInput = document.querySelector<HTMLInputElement>("#model")!;
-const apiKeyInput = document.querySelector<HTMLInputElement>("#api-key")!;
-const saveButton = document.querySelector<HTMLButtonElement>("#save-btn")!;
-const neutralizeButton = document.querySelector<HTMLButtonElement>(
-  "#neutralize-btn",
-)!;
-const restoreButton = document.querySelector<HTMLButtonElement>("#restore-btn")!;
-const modelResult = document.querySelector<HTMLElement>("#model-result")!;
-const modelOutput = document.querySelector<HTMLElement>("#model-output")!;
-const statusIndicator = document.querySelector<HTMLElement>(
-  "#status-indicator",
-)!;
-const statusText = document.querySelector<HTMLElement>("#status-text")!;
+const closeButton = queryElement<HTMLButtonElement>("#close-btn");
+const settingsForm = queryElement<HTMLFormElement>("#settings-form");
+const providerInput = queryElement<HTMLSelectElement>("#provider");
+const modelInput = queryElement<HTMLInputElement>("#model");
+const apiKeyInput = queryElement<HTMLInputElement>("#api-key");
+const consentInput = queryElement<HTMLInputElement>("#remote-consent");
+const saveButton = queryElement<HTMLButtonElement>("#save-btn");
+const neutralizeButton = queryElement<HTMLButtonElement>("#neutralize-btn");
+const restoreButton = queryElement<HTMLButtonElement>("#restore-btn");
+const statusRow = queryElement<HTMLElement>("#status-row");
+const statusIndicator = queryElement<HTMLElement>("#status-indicator");
+const statusText = queryElement<HTMLElement>("#status-text");
 
 let previousProvider = providerInput.value;
 
 closeButton.addEventListener("click", () => window.close());
-
 providerInput.addEventListener("change", () => {
   const previousDefault = defaultModelForProvider(previousProvider);
-
   if (!modelInput.value.trim() || modelInput.value === previousDefault) {
     modelInput.value = defaultModelForProvider(providerInput.value);
   }
-
   previousProvider = providerInput.value;
 });
 
 settingsForm.addEventListener("submit", async (event) => {
   event.preventDefault();
   setButtonsDisabled(true);
-
   try {
     await saveCurrentSettings();
-    setStatus("AI settings saved locally.", "success");
+    clearStatus();
   } catch (error) {
     setStatus(errorMessage(error), "error");
   } finally {
@@ -63,28 +51,17 @@ settingsForm.addEventListener("submit", async (event) => {
 
 neutralizeButton.addEventListener("click", async () => {
   setButtonsDisabled(true);
-  setStatus("Analyzing this product...", "neutral");
+  clearStatus();
 
   try {
-    await saveCurrentSettings();
-    const response = await sendMessageToActiveTab<PopupActionResponse>(
+    await saveCurrentSettings({ allowStructuralFallback: true });
+    await sendMessageToActiveTab(
       chrome.tabs,
       { type: "DEHYPE_REBUILD_CURRENT_PRODUCT" },
+      chrome.scripting,
     );
-
-    if (!response.ok) {
-      throw new Error(response.error ?? "The product could not be analyzed.");
-    }
-
-    modelOutput.textContent = JSON.stringify(
-      productInfoValues(response.productInfo),
-      null,
-      2,
-    );
-    modelResult.hidden = false;
-    setStatus("Product text was neutralized.", "success");
+    clearStatus();
   } catch (error) {
-    modelResult.hidden = true;
     setStatus(errorMessage(error), "error");
   } finally {
     setButtonsDisabled(false);
@@ -93,20 +70,14 @@ neutralizeButton.addEventListener("click", async () => {
 
 restoreButton.addEventListener("click", async () => {
   setButtonsDisabled(true);
-  setStatus("Restoring the original text...", "neutral");
-
+  clearStatus();
   try {
-    const response = await sendMessageToActiveTab<PopupActionResponse>(
+    await sendMessageToActiveTab(
       chrome.tabs,
       { type: "DEHYPE_RESTORE_CURRENT_PRODUCT" },
+      chrome.scripting,
     );
-
-    if (!response.ok) {
-      throw new Error(response.error ?? "The page could not be restored.");
-    }
-
-    modelResult.hidden = true;
-    setStatus("Original product text restored.", "success");
+    clearStatus();
   } catch (error) {
     setStatus(errorMessage(error), "error");
   } finally {
@@ -116,7 +87,7 @@ restoreButton.addEventListener("click", async () => {
 
 void loadSavedSettings();
 
-async function loadSavedSettings() {
+async function loadSavedSettings(): Promise<void> {
   if (!globalThis.chrome?.storage?.local) {
     setStatus("Open this popup from the installed Chrome extension.", "neutral");
     return;
@@ -124,27 +95,71 @@ async function loadSavedSettings() {
 
   try {
     const settings = await loadAiSettings(chrome.storage.local);
-
-    if (!settings) {
-      setStatus("Enter and save your AI settings.", "neutral");
-      return;
+    if (settings.provider) {
+      providerInput.value = settings.provider;
+      previousProvider = settings.provider;
     }
-
-    providerInput.value = settings.provider;
-    previousProvider = settings.provider;
-    modelInput.value = settings.model;
-    apiKeyInput.value = settings.apiKey;
-    setStatus("AI settings loaded.", "success");
+    if (settings.model) modelInput.value = settings.model;
+    if (settings.apiKey) apiKeyInput.value = settings.apiKey;
+    consentInput.checked =
+      settings.state === "remote" &&
+      settings.consentVersion === AI_REMOTE_CONSENT_VERSION;
+    clearStatus();
   } catch (error) {
     setStatus(errorMessage(error), "error");
   }
 }
 
-async function saveCurrentSettings() {
-  return saveAiSettings(chrome.storage.local, {
+async function saveCurrentSettings({
+  allowStructuralFallback = false,
+}: { allowStructuralFallback?: boolean } = {}): Promise<AiSettings> {
+  const value = {
+    version: AI_SETTINGS_VERSION,
+    state: "remote",
     provider: providerInput.value,
     model: modelInput.value,
     apiKey: apiKeyInput.value,
+  };
+
+  const hasCredentials =
+    modelInput.value.trim().length > 0 && apiKeyInput.value.trim().length > 0;
+  if (!consentInput.checked || !hasCredentials) {
+    if (allowStructuralFallback) {
+      await revokeUnusedProviderPermissions(chrome.permissions);
+      return saveAiSettings(chrome.storage.local, {
+        version: AI_SETTINGS_VERSION,
+        state: "unconfigured",
+        provider: providerInput.value,
+        model: modelInput.value,
+        apiKey: apiKeyInput.value,
+      });
+    }
+    throw new Error("Confirm consent before enabling AI analysis.");
+  }
+
+  const granted = await requestProviderPermission(
+    chrome.permissions,
+    providerInput.value,
+  );
+  if (!granted) {
+    if (allowStructuralFallback) {
+      return saveAiSettings(chrome.storage.local, {
+        version: AI_SETTINGS_VERSION,
+        state: "unconfigured",
+        provider: providerInput.value,
+        model: modelInput.value,
+        apiKey: apiKeyInput.value,
+      });
+    }
+    throw new Error(
+      "Provider access was not granted. Structural cleanup remains available.",
+    );
+  }
+
+  await revokeUnusedProviderPermissions(chrome.permissions, providerInput.value);
+  return saveAiSettings(chrome.storage.local, {
+    ...value,
+    consentVersion: AI_REMOTE_CONSENT_VERSION,
   });
 }
 
@@ -155,10 +170,22 @@ function setButtonsDisabled(disabled: boolean): void {
 }
 
 function setStatus(message: string, state: StatusState): void {
+  statusRow.hidden = false;
   statusText.textContent = message;
   statusIndicator.className = `status-${state}`;
 }
 
+function clearStatus(): void {
+  statusText.textContent = "";
+  statusRow.hidden = true;
+}
+
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+function queryElement<ElementType extends Element>(selector: string): ElementType {
+  const element = document.querySelector<ElementType>(selector);
+  if (!element) throw new Error(`Missing popup element: ${selector}`);
+  return element;
 }

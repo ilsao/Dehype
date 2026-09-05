@@ -5,8 +5,8 @@ import {
   type ProductInfoValueOnly,
 } from "../shared/productInfo.js";
 import {
-  validateAiSettings,
-  type AiSettings,
+  validateRemoteAiSettings,
+  type AiSettingsRemote,
 } from "../shared/aiSettings.js";
 
 const PRODUCT_FIELDS: ReadonlySet<string> = new Set(PRODUCT_INFO_FIELDS);
@@ -15,7 +15,8 @@ const SYSTEM_PROMPT = [
   "You are Dehype, a shopping assistant that removes persuasive wording.",
   "Neutralize urgency, scarcity, social pressure, and promotional language.",
   "Preserve factual product details, prices, URLs, and stock quantities.",
-  "Return only one JSON object with the same field names and string values.",
+  "For stock, state only the listed quantity or availability without urgency.",
+  "Return every provided field exactly once in one JSON object with string values.",
 ].join(" ");
 
 type JsonObject = Record<string, unknown>;
@@ -55,7 +56,7 @@ export async function neutralizeProductValues({
   productValues,
   fetchImpl = fetch,
 }: NeutralizeProductValuesOptions): Promise<NeutralizedProductValues> {
-  const settings = validateAiSettings(rawSettings);
+  const settings = validateRemoteAiSettings(rawSettings);
   const values = validateProductValues(productValues);
   const prompt = `${SYSTEM_PROMPT}\n\n${JSON.stringify(values, null, 2)}`;
 
@@ -134,7 +135,7 @@ function validateProductValues(value: unknown): ProductInfoValueOnly {
 }
 
 async function callOpenAi(
-  settings: AiSettings,
+  settings: AiSettingsRemote,
   prompt: string,
   fetchImpl: ProviderFetch,
 ): Promise<string> {
@@ -163,7 +164,7 @@ async function callOpenAi(
 }
 
 async function callGemini(
-  settings: AiSettings,
+  settings: AiSettingsRemote,
   prompt: string,
   fetchImpl: ProviderFetch,
 ): Promise<string> {
@@ -195,7 +196,7 @@ async function callGemini(
 }
 
 async function callClaude(
-  settings: AiSettings,
+  settings: AiSettingsRemote,
   prompt: string,
   fetchImpl: ProviderFetch,
 ): Promise<string> {

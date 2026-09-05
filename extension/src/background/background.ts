@@ -1,83 +1,121 @@
-import { neutralizeProductValues } from "./aiProvider.js";
-import { neutralizeValuesLocally } from "./localNeutralizer.js";
+import { neutralizeProductValues, type ProviderFetch } from "./aiProvider.js";
+import { getAiSettingsStatus, loadAiSettings } from "../shared/aiSettings.js";
 import {
-  getAiSettingsStatus,
-  loadAiSettings,
-} from "../shared/aiSettings.js";
-import type {
-  NeutralizeProductValuesRequest,
-  ProductInfoValueOnly,
+  isNeutralizeProductValuesRequest,
+  type NeutralizeProductValuesResponse,
+  type NeutralizeSource,
+  type ProductInfoField,
+  type ProductInfoValueOnly,
 } from "../shared/productInfo.js";
 
-console.log("[Dehype] Background service worker started.");
+interface NeutralizeWorkflowDependencies {
+  storage?: chrome.storage.StorageArea;
+  fetchImpl?: ProviderFetch;
+}
 
-chrome.runtime.onMessage.addListener((message: unknown, _sender, sendResponse) => {
-  if (isMessageType(message, "getStatus")) {
-    void getAiSettingsStatus(chrome.storage.local).then(sendResponse);
-    return true;
-  }
+interface NeutralizeWorkflowResult {
+  productValues: ProductInfoValueOnly;
+  source: NeutralizeSource;
+  fallbackReason?: string;
+}
 
-  if (isNeutralizeProductValuesRequest(message)) {
+if (typeof chrome !== "undefined" && chrome.runtime?.onMessage) {
+  chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+    if (isRecord(message) && message.type === "getStatus") {
+      void getAiSettingsStatus(chrome.storage.local).then(sendResponse);
+      return true;
+    }
+
+    if (!isNeutralizeProductValuesRequest(message)) return false;
+
     void neutralizeWithSavedSettings(message.productValues)
-      .then((productValues) =>
-        sendResponse({
+      .then(({ productValues, source, fallbackReason }) => {
+        const response: NeutralizeProductValuesResponse = {
           type: "DEHYPE_NEUTRALIZE_VALUES_RESULT",
           productValues,
-        }),
-      )
-      .catch((error) =>
+          source,
+          ...(fallbackReason ? { fallbackReason } : {}),
+        };
+        sendResponse(response);
+      })
+      .catch((error: unknown) =>
         sendResponse({
           type: "DEHYPE_NEUTRALIZE_PRODUCT_INFO_ERROR",
           message: error instanceof Error ? error.message : String(error),
         }),
       );
     return true;
-  }
+  });
+}
 
-  if (isLocalNeutralizeRequest(message)) {
-    sendResponse({
-      type: "DEHYPE_NEUTRALIZE_VALUES_RESULT",
-      productValues: neutralizeValuesLocally(message.productValues ?? {}),
-    });
-    return false;
-  }
-
-  return false;
-});
-
-async function neutralizeWithSavedSettings(
+export async function neutralizeWithSavedSettings(
   productValues: ProductInfoValueOnly,
-) {
-  const settings = await loadAiSettings(chrome.storage.local);
+  dependencies: NeutralizeWorkflowDependencies = {},
+): Promise<NeutralizeWorkflowResult> {
+  const storage = dependencies.storage ?? chrome.storage.local;
+  const settings = await loadAiSettings(storage);
 
-  if (!settings) {
-    throw new Error("Open Dehype and save your AI provider, model, and API key.");
+  if (settings.state !== "remote") {
+    return structuralResult(
+      productValues,
+      "Configure and consent to an AI provider to analyze product wording.",
+    );
   }
 
-  return neutralizeProductValues({ settings, productValues });
+  try {
+    const neutralizeOptions = {
+      settings,
+      productValues,
+      ...(dependencies.fetchImpl ? { fetchImpl: dependencies.fetchImpl } : {}),
+    };
+    const modelValues = await neutralizeProductValues(neutralizeOptions);
+    const modelOverlay: ProductInfoValueOnly = {
+      ...productValues,
+      ...modelValues,
+    };
+
+    for (const field of ["originalPrice", "currentPrice", "image"] as const) {
+      preserveLocalFact(modelOverlay, productValues, field);
+    }
+
+    return {
+      productValues: modelOverlay,
+      source: "model",
+    };
+  } catch (error) {
+    return structuralResult(
+      productValues,
+      error instanceof Error
+        ? error.message
+        : "The model response could not be used.",
+    );
+  }
 }
 
-function isNeutralizeProductValuesRequest(
-  message: unknown,
-): message is NeutralizeProductValuesRequest {
-  return (
-    isRecord(message) &&
-    message.type === "DEHYPE_NEUTRALIZE_VALUES" &&
-    typeof message.productValues === "object" &&
-    message.productValues !== null
-  );
+function structuralResult(
+  productValues: ProductInfoValueOnly,
+  fallbackReason: string,
+): NeutralizeWorkflowResult {
+  return {
+    productValues: { ...productValues },
+    source: "structural",
+    fallbackReason,
+  };
 }
 
-function isLocalNeutralizeRequest(
-  message: unknown,
-): message is { type: "DEHYPE_NEUTRALIZE_VALUES_LOCALLY"; productValues?: ProductInfoValueOnly } {
-  return isMessageType(message, "DEHYPE_NEUTRALIZE_VALUES_LOCALLY");
-}
-
-function isMessageType(message: unknown, type: string): message is Record<string, unknown> {
-  return isRecord(message) && message.type === type;
+function preserveLocalFact(
+  modelOverlay: ProductInfoValueOnly,
+  productValues: ProductInfoValueOnly,
+  field: ProductInfoField,
+): void {
+  const value = productValues[field];
+  if (typeof value === "string") {
+    modelOverlay[field] = value;
+  } else {
+    delete modelOverlay[field];
+  }
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null;
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

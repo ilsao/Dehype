@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 
 import { DEHYPE_ELEMENT_ID } from "../extension/src/adapters/productAdapter";
-import { TemuProductAdapter } from "../extension/src/adapters/temuProductAdapter";
+import {
+  TemuProductAdapter,
+  parseLocalizedPrice,
+} from "../extension/src/adapters/temuProductAdapter";
 
 const productUrl =
   "https://www.temu.com/ca/sample-product-g-123456789.html?is_back=1";
@@ -79,8 +82,8 @@ describe("TemuProductAdapter", () => {
 
     expect(adapter.extractProductInfo(document, productUrl)).toEqual({
       name: { id: "test-id-1", value: "Ceramic mug" },
-      originalPrice: { id: "test-id-3", value: "NT$ 1,007.40" },
-      currentPrice: { id: "test-id-2", value: "NT$ 4.58" },
+      originalPrice: { id: "test-id-3", value: "NT$1,007.40" },
+      currentPrice: { id: "test-id-2", value: "NT$4.58" },
     });
   });
 
@@ -110,6 +113,39 @@ describe("TemuProductAdapter", () => {
     expect(adapter.extractProductInfo(document, productUrl)).toEqual({
       name: { id: "test-id-1", value: "Ceramic mug" },
     });
+  });
+
+  it("extracts optional facts and uses metadata fallbacks", () => {
+    const document = new DOMParser().parseFromString(
+      `
+        <head>
+          <meta property="og:image" content="https://example.test/mug.png">
+          <meta name="description" content="A 350 ml ceramic mug">
+        </head>
+        <main>
+          <h1 data-testid="product-title">Ceramic mug</h1>
+          <span data-testid="current-price">NT$429</span>
+          <span data-testid="stock-status">12 items available</span>
+        </main>
+      `,
+      "text/html",
+    );
+
+    expect(createAdapter().extractProductInfo(document, productUrl)).toEqual({
+      name: { id: "test-id-1", value: "Ceramic mug" },
+      currentPrice: { id: "test-id-2", value: "NT$429" },
+      image: { id: "test-id-3", value: "https://example.test/mug.png" },
+      description: { id: "test-id-4", value: "A 350 ml ceramic mug" },
+      stockAmount: { id: "test-id-5", value: "12 items available" },
+    });
+  });
+
+  it("normalizes common localized price formats for comparison", () => {
+    expect(parseLocalizedPrice("NT$ 1,299")).toBe(1299);
+    expect(parseLocalizedPrice("€ 1.299,95")).toBe(1299.95);
+    expect(parseLocalizedPrice("US$ 1,299.95")).toBe(1299.95);
+    expect(parseLocalizedPrice("CHF 1’299.50")).toBe(1299.5);
+    expect(parseLocalizedPrice("Price unavailable")).toBeUndefined();
   });
 
   it("fails when the required name is missing", () => {
@@ -159,5 +195,236 @@ describe("TemuProductAdapter", () => {
     expect(
       document.querySelector("._25g_jM0z")?.getAttribute(DEHYPE_ELEMENT_ID),
     ).toBe(productInfo.name.id);
+  });
+
+  it("classifies promotions while preserving and toning down commerce controls", () => {
+    const document = new DOMParser().parseFromString(
+      `
+        <main>
+          <h1 class="_25g_jM0z">Ceramic mug</h1>
+          <div data-testid="countdown-banner">Flash sale 01:00:00</div>
+          <aside data-dehype-persuasion>Spin to win</aside>
+          <section>Limited time <button>Add to cart</button></section>
+          <button data-testid="coupon-button">Apply coupon</button>
+          <button id="primary-action">Add to cart</button>
+          <button id="delivery">Free shipping for this item</button>
+          <div class="goodsRecommend">Explore your interests</div>
+        </main>
+      `,
+      "text/html",
+    );
+    const adapter = new TemuProductAdapter();
+    adapter.extractProductInfo(document, productUrl);
+
+    const targets = adapter.findNeutralizationTargets(document);
+    const targetFor = (selector: string) =>
+      targets.find(({ element }) => element === document.querySelector(selector));
+
+    expect(targetFor('[data-testid="countdown-banner"]')).toMatchObject({
+      action: "suppress",
+      reason: "countdown",
+      presentation: "hidden-container",
+    });
+    expect(targetFor("aside")).toMatchObject({
+      action: "suppress",
+      reason: "promotion",
+      presentation: "hidden-container",
+    });
+    expect(targetFor('[data-testid="coupon-button"]')).toMatchObject({
+      action: "suppress",
+      reason: "promotion",
+    });
+    expect(targetFor(".goodsRecommend")).toMatchObject({
+      action: "suppress",
+      reason: "recommendation",
+    });
+    expect(targetFor("#primary-action")).toMatchObject({
+      action: "deemphasize",
+      reason: "promotion",
+      presentation: "neutral-action",
+    });
+    expect(targetFor("#delivery")).toMatchObject({
+      action: "deemphasize",
+      presentation: "neutral-fact",
+    });
+    expect(targetFor("section")).toBeUndefined();
+  });
+
+  it("classifies localized urgency, scarcity, and social-proof text", () => {
+    const document = new DOMParser().parseFromString(
+      `
+        <main>
+          <h1 class="_25g_jM0z">Ceramic mug</h1>
+          <span id="countdown">倒數 01:00:00</span>
+          <span id="scarcity">仅剩 3 件</span>
+          <span id="ranking">#2 熱銷排行</span>
+          <span id="coupon">限时优惠 領券</span>
+          <button id="cart">加入購物車</button>
+        </main>
+      `,
+      "text/html",
+    );
+    const adapter = new TemuProductAdapter();
+    adapter.extractProductInfo(document, productUrl);
+    const targets = adapter.findNeutralizationTargets(document);
+    const actionFor = (selector: string) =>
+      targets.find(({ element }) => element === document.querySelector(selector))
+        ?.action;
+
+    expect(actionFor("#countdown")).toBe("suppress");
+    expect(actionFor("#scarcity")).toBe("suppress");
+    expect(actionFor("#ranking")).toBe("suppress");
+    expect(actionFor("#coupon")).toBe("suppress");
+    expect(actionFor("#cart")).toBe("deemphasize");
+  });
+
+  it("canonicalizes split Temu price rows and targets the complete rows", () => {
+    const document = new DOMParser().parseFromString(
+      `
+        <h1 class="_25g_jM0z">Folding pliers</h1>
+        <div id="goods_price">
+          <div id="discount"><span>48% OFF</span></div>
+          <div id="original-row">
+            <span class="_14At0Pe5">$9.04</span>
+            <span aria-hidden="true">9.04</span>
+          </div>
+          <div id="current-row">
+            <span class="_14At0Pe5">Est. $4.64</span>
+            <span aria-hidden="true">Est.</span><span aria-hidden="true">CA$</span><span aria-hidden="true">4</span><span aria-hidden="true">.64</span>
+          </div>
+        </div>
+      `,
+      "text/html",
+    );
+    let nextId = 0;
+    const adapter = new TemuProductAdapter((element) => {
+      const id = `test-id-${++nextId}`;
+      element?.setAttribute(DEHYPE_ELEMENT_ID, id);
+      return id;
+    });
+
+    const productInfo = adapter.extractProductInfo(document, productUrl);
+
+    expect(productInfo.originalPrice).toEqual({
+      id: "test-id-2",
+      value: "CA$9.04",
+    });
+    expect(productInfo.currentPrice).toEqual({
+      id: "test-id-3",
+      value: "Estimated CA$4.64",
+    });
+    expect(document.querySelector("#original-row")?.getAttribute(DEHYPE_ELEMENT_ID))
+      .toBe("test-id-2");
+    expect(document.querySelector("#current-row")?.getAttribute(DEHYPE_ELEMENT_ID))
+      .toBe("test-id-3");
+    expect(document.querySelector("#original-row ._14At0Pe5")?.hasAttribute(DEHYPE_ELEMENT_ID))
+      .toBe(false);
+  });
+
+  it("targets complete promotional containers and distinct neutral presentations", () => {
+    const document = new DOMParser().parseFromString(
+      `
+        <h1 class="_25g_jM0z">Folding pliers</h1>
+        <header id="mainHeader"><div class="_33LMUpZn" id="black-rail"><span>01:06:54</span></div></header>
+        <div data-dehype-promotion-container id="labour-day">Labour Day — 20% OFF</div>
+        <section class="DQPvwQBO _3csHYvw1" id="purchase-card">
+          <img data-main-image src="https://example.test/pliers.png">
+          <button class="_3A7bjOr2 _36RgGpaI" id="cart">Add to cart</button>
+        </section>
+        <button id="delivery">Free shipping for this item</button>
+      `,
+      "text/html",
+    );
+
+    const adapter = new TemuProductAdapter();
+    adapter.extractProductInfo(document, productUrl);
+    const targets = adapter.findNeutralizationTargets(document);
+    const target = (id: string) =>
+      targets.find(({ element }) => element.id === id);
+    expect(target("black-rail")).toMatchObject({
+      action: "suppress",
+      presentation: "hidden-container",
+    });
+    expect(target("labour-day")).toMatchObject({
+      action: "suppress",
+      presentation: "hidden-container",
+    });
+    expect(target("purchase-card")).toMatchObject({
+      action: "deemphasize",
+      presentation: "neutral-surface",
+    });
+    expect(target("cart")).toMatchObject({
+      action: "deemphasize",
+      presentation: "neutral-action",
+    });
+    expect(target("delivery")).toMatchObject({
+      action: "deemphasize",
+      presentation: "neutral-fact",
+    });
+  });
+
+  it("suppresses the recommendation rail, sticky benefit ad, and redundant lightning card", () => {
+    const document = new DOMParser().parseFromString(
+      `
+        <div id="main_scale">
+          <main class="baseContent" role="main">
+            <h1 class="_25g_jM0z">Kitchen scissors</h1>
+            <div id="rightContent">
+              <section id="lightning-card">
+                <span>LIGHTNING DEAL</span>
+                <div role="button">Go to cart</div>
+              </section>
+              <section id="primary-purchase-row" class="_100Uy0HO">
+                <button>decrease quantity</button>
+                <div role="button">Go to cart</div>
+                <button>increase quantity</button>
+              </section>
+            </div>
+            <section id="goodsRecommend">Explore your interests</section>
+          </main>
+        </div>
+        <aside id="mainStickyBenefitBar">Free shipping — Price Match Guarantee</aside>
+      `,
+      "text/html",
+    );
+    const adapter = new TemuProductAdapter();
+    const targets = adapter.findNeutralizationTargets(document);
+    const target = (id: string) =>
+      targets.find(({ element }) => element.id === id);
+
+    expect(target("goodsRecommend")).toMatchObject({
+      action: "suppress",
+      reason: "recommendation",
+    });
+    expect(target("mainStickyBenefitBar")).toMatchObject({
+      action: "suppress",
+      reason: "promotion",
+    });
+    expect(target("lightning-card")).toMatchObject({
+      action: "suppress",
+      reason: "promotion",
+    });
+    expect(target("primary-purchase-row")).toBeUndefined();
+    expect(adapter.findNeutralLayoutRoot(document)?.className).toBe("baseContent");
+  });
+
+  it("never suppresses a lightning card when it is the only cart control", () => {
+    const document = new DOMParser().parseFromString(
+      `
+        <h1 class="_25g_jM0z">Kitchen scissors</h1>
+        <div id="rightContent">
+          <section id="only-purchase-card">
+            <span>LIGHTNING DEAL</span>
+            <div role="button">Go to cart</div>
+          </section>
+        </div>
+      `,
+      "text/html",
+    );
+
+    const targets = new TemuProductAdapter().findNeutralizationTargets(document);
+    expect(
+      targets.find(({ element }) => element.id === "only-purchase-card"),
+    ).toBeUndefined();
   });
 });

@@ -1,6 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
 
 import {
+  AI_REMOTE_CONSENT_VERSION,
+  AI_SETTINGS_VERSION,
+  type AiSettingsRemote,
+} from "../shared/aiSettings.js";
+import {
   neutralizeProductValues,
   parseNeutralizedValues,
 } from "./aiProvider.js";
@@ -11,6 +16,21 @@ const productValues = {
   currentPrice: "$12.99 today only",
   stockAmount: "Only 3 left",
 };
+
+function remoteSettings(
+  provider: AiSettingsRemote["provider"],
+  model: string,
+  apiKey: string,
+): AiSettingsRemote {
+  return {
+    version: AI_SETTINGS_VERSION,
+    state: "remote",
+    provider,
+    model,
+    apiKey,
+    consentVersion: AI_REMOTE_CONSENT_VERSION,
+  };
+}
 
 function providerResponse(data: unknown, ok = true) {
   return {
@@ -33,7 +53,7 @@ describe("AI provider requests", () => {
 
     await expect(
       neutralizeProductValues({
-        settings: { provider: "openai", model: "gpt-test", apiKey: "key-o" },
+        settings: remoteSettings("openai", "gpt-test", "key-o"),
         productValues,
         fetchImpl,
       }),
@@ -45,7 +65,7 @@ describe("AI provider requests", () => {
       "Bearer key-o",
     );
     expect(JSON.parse(request.body as string).model).toBe("gpt-test");
-    expect(request.body as string).not.toContain("id");
+    expect(request.body as string).not.toContain('"id"');
   });
 
   it("uses the selected Gemini model and key", async () => {
@@ -62,11 +82,7 @@ describe("AI provider requests", () => {
     );
 
     await neutralizeProductValues({
-      settings: {
-        provider: "gemini",
-        model: "gemini-test",
-        apiKey: "key-g",
-      },
+      settings: remoteSettings("gemini", "gemini-test", "key-g"),
       productValues,
       fetchImpl,
     });
@@ -87,11 +103,7 @@ describe("AI provider requests", () => {
     );
 
     await neutralizeProductValues({
-      settings: {
-        provider: "claude",
-        model: "claude-test",
-        apiKey: "key-c",
-      },
+      settings: remoteSettings("claude", "claude-test", "key-c"),
       productValues,
       fetchImpl,
     });
@@ -111,7 +123,7 @@ describe("AI provider requests", () => {
 
     await expect(
       neutralizeProductValues({
-        settings: { provider: "openai", model: "gpt-test", apiKey: "bad" },
+        settings: remoteSettings("openai", "gpt-test", "bad"),
         productValues,
         fetchImpl,
       }),
