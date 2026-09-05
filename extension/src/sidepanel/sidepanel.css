@@ -412,3 +412,22 @@ fieldset:disabled textarea {
     grid-template-columns: 1fr;
   }
 }
+
+.price-comparison-section { padding: 18px 16px; border-top: 1px solid #d8e0e7; }
+.price-comparison-header { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.price-comparison-header h2, .price-summary-heading { color: #243b4a; font-size: 13px; font-weight: 750; }
+.price-comparison-header button { width: auto; min-height: 32px; }
+.price-product-name, .price-status { margin-top: 8px; color: #53636f; font-size: 12px; line-height: 1.4; }
+.price-chart-heading { display: flex; justify-content: space-between; gap: 8px; margin-top: 14px; color: #53636f; font-size: 11px; font-weight: 700; }
+.price-chart-frame { display: grid; grid-template-columns: 24px 1fr; grid-template-rows: 180px 24px; gap: 0 8px; margin-top: 6px; }
+.price-axis-y { display: flex; align-items: center; justify-content: center; writing-mode: vertical-rl; color: #53636f; font-size: 10px; }
+.price-axis-x { grid-column: 2; color: #53636f; font-size: 10px; text-align: center; }
+.price-chart { display: flex; align-items: flex-end; gap: 4px; min-width: 0; height: 180px; padding: 14px 4px 0; border-left: 1px solid #afbdc8; border-bottom: 1px solid #afbdc8; background: repeating-linear-gradient(to top, transparent 0 43px, #e3e8eb 44px); }
+.price-bar-group { display: flex; flex: 1 1 0; align-items: center; justify-content: flex-end; min-width: 0; height: 100%; flex-direction: column; color: #53636f; font-size: 9px; }
+.price-bar { width: 100%; min-height: 2px; background: #167c6a; }
+.price-bar-group > span:last-child { width: 100%; margin-top: 3px; overflow: hidden; text-align: center; text-overflow: ellipsis; white-space: nowrap; }
+.price-summary-heading { margin-top: 14px; }
+.price-summary-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-top: 7px; }
+.price-summary-grid div { border-top: 2px solid #d1a027; padding: 8px 5px; }
+.price-summary-grid span { display: block; color: #53636f; font-size: 10px; }
+.price-summary-grid strong { display: block; margin-top: 4px; font-size: 14px; }

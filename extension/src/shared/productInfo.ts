@@ -81,6 +81,47 @@ export interface RestoreCurrentProductResponse {
   type: "DEHYPE_RESTORE_CURRENT_PRODUCT_RESULT";
 }
 
+export interface PriceComparisonRequest {
+  type: "DEHYPE_PRICE_COMPARISON";
+}
+
+export interface GenerateSearchKeywordRequest {
+  type: "DEHYPE_GENERATE_SEARCH_KEYWORD";
+  productName: string;
+}
+
+export interface GenerateSearchKeywordResponse {
+  type: "DEHYPE_GENERATE_SEARCH_KEYWORD_RESULT";
+  searchKeyword: string;
+}
+
+export interface PriceComparisonResult {
+  type: "DEHYPE_PRICE_COMPARISON_RESULT";
+  source: "api" | "dom";
+  productName: string;
+  searchKeyword: string;
+  products: Array<{
+    name: string;
+    priceStr: string;
+    price: number;
+    currency: string;
+    productId?: string;
+    productUrl?: string;
+  }>;
+  min: number;
+  max: number;
+  median: number;
+}
+
+export interface PriceComparisonErrorResponse {
+  type: "DEHYPE_PRICE_COMPARISON_ERROR";
+  message: string;
+}
+
+export interface ReturnFromSearchRequest {
+  type: "DEHYPE_RETURN_FROM_SEARCH";
+}
+
 export interface ContentScriptErrorResponse {
   type: "DEHYPE_CONTENT_SCRIPT_ERROR";
   operation: "rebuild" | "restore";
@@ -97,7 +138,13 @@ export type ExtensionMessage =
   | RestoreCurrentProductRequest
   | RebuildCurrentProductResponse
   | RestoreCurrentProductResponse
-  | ContentScriptErrorResponse;
+  | ContentScriptErrorResponse
+  | PriceComparisonRequest
+  | GenerateSearchKeywordRequest
+  | GenerateSearchKeywordResponse
+  | PriceComparisonResult
+  | PriceComparisonErrorResponse
+  | ReturnFromSearchRequest;
 
 export function toValueOnlyProductInfo(
   productInfo: ProductInfo,
@@ -224,11 +271,17 @@ function isNeutralizedProductValues(
 
 export function isContentScriptRequest(
   value: unknown,
-): value is RebuildCurrentProductRequest | RestoreCurrentProductRequest {
+): value is
+  | RebuildCurrentProductRequest
+  | RestoreCurrentProductRequest
+  | PriceComparisonRequest
+  | ReturnFromSearchRequest {
   return (
     isRecord(value) &&
     (value.type === "DEHYPE_REBUILD_CURRENT_PRODUCT" ||
-      value.type === "DEHYPE_RESTORE_CURRENT_PRODUCT")
+      value.type === "DEHYPE_RESTORE_CURRENT_PRODUCT" ||
+      value.type === "DEHYPE_PRICE_COMPARISON" ||
+      value.type === "DEHYPE_RETURN_FROM_SEARCH")
   );
 }
 

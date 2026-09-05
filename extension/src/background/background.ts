@@ -43,6 +43,18 @@ if (typeof chrome !== "undefined" && chrome.runtime?.onMessage) {
       return true;
     }
 
+    if (
+      isRecord(message) &&
+      message.type === "DEHYPE_GENERATE_SEARCH_KEYWORD" &&
+      typeof message.productName === "string"
+    ) {
+      sendResponse({
+        type: "DEHYPE_GENERATE_SEARCH_KEYWORD_RESULT",
+        searchKeyword: localSearchKeyword(message.productName),
+      });
+      return false;
+    }
+
     if (!isNeutralizeProductValuesRequest(message)) return false;
 
     void neutralizeWithSavedSettings(message.productValues)
@@ -63,6 +75,22 @@ if (typeof chrome !== "undefined" && chrome.runtime?.onMessage) {
       );
     return true;
   });
+}
+
+function localSearchKeyword(productName: string): string {
+  const keyword = productName
+    .replace(/[^\p{L}\p{N}\s]/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .split(" ")
+    .slice(0, 6)
+    .join(" ");
+  if (!keyword) throw new Error("Product information must include a product name.");
+  return keyword;
+}
+
+export async function generateKeywordWithSavedSettings(productName: string): Promise<string> {
+  return localSearchKeyword(productName);
 }
 
 export async function neutralizeWithSavedSettings(
