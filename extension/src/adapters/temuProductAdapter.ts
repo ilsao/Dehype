@@ -33,7 +33,7 @@ const SUPPRESSION_RULES = [
       '[data-dehype-promotion-container]',
       "._2wEgFFPz.PjdWJn3s",
       "._188rnzBo.PjdWJn3s",
-      ".Y3CaoPDB.-_dgEvGj",
+      ".Y3CaoPDB",
     ],
   },
   {
@@ -76,7 +76,7 @@ const TEXT_SUPPRESSION_RULES = [
   {
     reason: "promotion",
     pattern:
-      /(?:^\s*\d+(?:[.,]\d+)?%\s*off\s*$|after applying promos?|\binstallments? of\b|add .*eligible.*\boff\b|\b-?\d+%\s+now!.*add to cart|flash sale|lightning deal|labou?r day|limited time|special for you|限時(?:優惠|特價|搶購)?|限时(?:优惠|特价|抢购)?|閃購|闪购|領券|领券)/i,
+      /(?:^\s*big sale\s*$|^\s*\d+(?:[.,]\d+)?%\s*off(?:\s+on orders)?\s*$|after applying promos?|\binstallments? of\b|add .*eligible.*\boff\b|\b-?\d+%\s+now!.*add to cart|flash sale|lightning deal|labou?r day|limited time|special for you|限時(?:優惠|特價|搶購)?|限时(?:优惠|特价|抢购)?|閃購|闪购|領券|领券)/i,
   },
   {
     reason: "gamification",
@@ -108,9 +108,14 @@ const DEEMPHASIS_RULES = [
 }[];
 
 const PRIMARY_ACTION_TEXT =
-  /^(?:add to cart|加入購物車|加入购物车|add to bag)$/i;
+  /^(?:add to cart|加入購物車|加入购物车|add to bag)(?:\s|$)/i;
 const CART_DESTINATION_TEXT = /^(?:go to cart|前往購物車|前往购物车)$/i;
-const LIGHTNING_DEAL_TEXT = /^(?:lightning deal|閃電特價|闪电特价)$/i;
+const PROMOTIONAL_CART_TEXT =
+  /(?:^|\s)-?\d+(?:[.,]\d+)?%\s+now!?.*(?:\badd to cart!?|加入購物車!?|加入购物车!?)/i;
+const PROMOTIONAL_CARD_HEADING =
+  /^\s*(?:big\s+sale|(?:amazing|great|top|hot)[\s\-–—:!]*(?:find|deal|pick|offer)s?)[!?.\s]*$/i;
+const URGENCY_BADGE_TEXT =
+  /^\s*(?:last|final)[\s\-–—:!]*(?:day|\d{1,3})[!?.\s]*$/i;
 const DELIVERY_TEXT =
   /^(?:free shipping for this item|arrives? in .+|ships? earliest .+|此商品免運|此商品免运|預計.+送達|预计.+送达)/i;
 
@@ -393,6 +398,10 @@ export class TemuProductAdapter implements ProductAdapter {
 
   public findNeutralizationTargets(document: Document): NeutralizationTarget[] {
     const targets = new Map<HTMLElement, NeutralizationTarget>();
+    const protectedCartDestinations = interactiveElementsWithText(
+      document,
+      CART_DESTINATION_TEXT,
+    );
 
     for (const rule of SUPPRESSION_RULES) {
       addTargets(
@@ -404,7 +413,11 @@ export class TemuProductAdapter implements ProductAdapter {
       );
     }
     for (const rule of TEXT_SUPPRESSION_RULES) {
-      const textTargets = elementsWithOwnText(document, rule.pattern);
+      const textTargets = elementsWithOwnText(document, rule.pattern).filter(
+        (element) =>
+          rule.reason !== "promotion" ||
+          element.closest('button, [role="button"]') === null,
+      );
       addTargets(
         targets,
         rule.reason === "countdown" || rule.reason === "promotion"
@@ -428,7 +441,17 @@ export class TemuProductAdapter implements ProductAdapter {
     }
     addTargets(
       targets,
-      interactiveElementsWithText(document, PRIMARY_ACTION_TEXT),
+      findStandalonePromotionContainers(
+        document,
+        PROMOTIONAL_CARD_HEADING,
+      ),
+      "suppress",
+      "promotion",
+      "hidden-container",
+    );
+    addTargets(
+      targets,
+      primaryActionControls(document),
       "deemphasize",
       "promotion",
       "neutral-action",
@@ -442,18 +465,67 @@ export class TemuProductAdapter implements ProductAdapter {
     );
     addTargets(
       targets,
-      findRedundantLightningDealCards(document),
+      findUrgencyBadgeContainers(document),
+      "suppress",
+      "countdown",
+      "hidden-container",
+    );
+    addTargets(
+      targets,
+      findUpperPromotionalCartCards(document),
+      "remove",
+      "promotion",
+      "removed-container",
+    );
+    addTargets(
+      targets,
+      findRedundantPromotionalCartControls(document),
       "suppress",
       "promotion",
       "hidden-container",
     );
+    // Choose a surviving commerce control before filtering destructive targets.
+    const commerceControls = Array.from(
+      document.querySelectorAll<HTMLElement>('button, [role="button"]'),
+    ).filter((control) =>
+      isPrimaryActionControl(control) ||
+      PROMOTIONAL_CART_TEXT.test(textValue(control)),
+    );
+    const removalTargets = [...targets.values()].filter(({ action }) => action !== "deemphasize");
+    const usableControls = commerceControls.filter(isVisibleUsableControl);
+    const retainedControls = usableControls.filter((control) =>
+      !removalTargets.some(({ element }) => element.contains(control)) &&
+      isPrimaryActionControl(control),
+    );
+    if (retainedControls.length === 0) {
+      const fallback = usableControls.find((control) =>
+        !removalTargets.some(({ element, action }) => action === "remove" && element.contains(control)),
+      ) ?? usableControls[0] ?? commerceControls[0];
+      if (fallback) retainedControls.push(fallback);
+    }
+    for (const control of retainedControls) {
+      const replacementText = neutralCartText(textValue(control));
+      const rewriteElement = replacementText
+        ? promotionalCartTextElement(control)
+        : undefined;
+      const targetElement = rewriteElement ?? control;
+      targets.set(targetElement, {
+        element: targetElement,
+        action: rewriteElement ? "rewrite-text" : "deemphasize",
+        reason: "promotion",
+        presentation: "neutral-action",
+        ...(rewriteElement && replacementText ? { replacementText } : {}),
+      });
+    }
 
     return [...targets.values()].filter(
       ({ element, action }) =>
+        !intersectsAny(element, protectedCartDestinations) &&
         (action === "deemphasize" ||
+          action === "rewrite-text" ||
           (!element.hasAttribute(DEHYPE_ELEMENT_ID) &&
-            !element.querySelector(`[${DEHYPE_ELEMENT_ID}]`))) &&
-        (action !== "suppress" || !isProtectedCommerceControl(element)),
+            !element.querySelector(`[${DEHYPE_ELEMENT_ID}]`) &&
+            !intersectsAny(element, retainedControls))),
     );
   }
 
@@ -485,6 +557,18 @@ function findPromotionalContainer(
   element: HTMLElement,
 ): HTMLElement {
   if (element.closest("#goods_price")) return element;
+
+  const managedContainer = element.closest<HTMLElement>(
+    "[data-dehype-suppressed]",
+  );
+  if (
+    managedContainer &&
+    managedContainer.id !== "mainHeader" &&
+    managedContainer.id !== "rightContent" &&
+    !managedContainer.hasAttribute(DEHYPE_ELEMENT_ID)
+  ) {
+    return managedContainer;
+  }
 
   const viewWidth = document.defaultView?.innerWidth ?? 0;
   const candidates: HTMLElement[] = [];
@@ -539,6 +623,24 @@ function elementsWithOwnText(
   });
 }
 
+function findStandalonePromotionContainers(
+  document: Document,
+  pattern: RegExp,
+): HTMLElement[] {
+  return elementsWithOwnText(document, pattern).map((element) => {
+    const label = textValue(element);
+    let container = element;
+    while (
+      container.parentElement &&
+      textValue(container.parentElement) === label &&
+      !container.parentElement.matches("#rightContent, #mainHeader")
+    ) {
+      container = container.parentElement;
+    }
+    return container;
+  });
+}
+
 function interactiveElementsWithText(
   document: Document,
   pattern: RegExp,
@@ -548,51 +650,150 @@ function interactiveElementsWithText(
   ).filter((element) => pattern.test(textValue(element)));
 }
 
-function findRedundantLightningDealCards(document: Document): HTMLElement[] {
+function primaryActionControls(document: Document): HTMLElement[] {
+  return Array.from(
+    document.querySelectorAll<HTMLElement>('button, [role="button"]'),
+  ).filter(isPrimaryActionControl);
+}
+
+function isPrimaryActionControl(element: HTMLElement): boolean {
+  return (
+    PRIMARY_ACTION_TEXT.test(textValue(element)) ||
+    PRIMARY_ACTION_TEXT.test(ownText(element)) ||
+    Array.from(
+      element.querySelectorAll<HTMLElement>("span, div, p, strong, em"),
+    ).some((label) => PRIMARY_ACTION_TEXT.test(ownText(label)))
+  );
+}
+
+function neutralCartText(value: string): string | undefined {
+  if (!PROMOTIONAL_CART_TEXT.test(value)) return undefined;
+  if (/加入購物車/.test(value)) return "加入購物車";
+  if (/加入购物车/.test(value)) return "加入购物车";
+  if (/\badd to bag\b/i.test(value)) return "Add to bag";
+  if (/\badd to cart\b/i.test(value)) return "Add to cart";
+  return undefined;
+}
+
+function promotionalCartTextElement(
+  control: HTMLElement,
+): HTMLElement | undefined {
+  return Array.from(
+    control.querySelectorAll<HTMLElement>("span, div, p, strong, em"),
+  ).find((element) => PROMOTIONAL_CART_TEXT.test(ownText(element))) ??
+    (PROMOTIONAL_CART_TEXT.test(ownText(control)) ? control : undefined);
+}
+
+function ownText(element: HTMLElement): string {
+  return Array.from(element.childNodes)
+    .filter((node) => node.nodeType === Node.TEXT_NODE)
+    .map((node) => node.textContent ?? "")
+    .join(" ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function findRedundantPromotionalCartControls(
+  document: Document,
+): HTMLElement[] {
   const productPanel = document.querySelector<HTMLElement>("#rightContent");
   if (!productPanel) return [];
 
-  const cartControls = interactiveElementsWithText(
-    productPanel.ownerDocument,
-    CART_DESTINATION_TEXT,
+  const primaryControls = Array.from(
+    productPanel.querySelectorAll<HTMLElement>('button, [role="button"]'),
   ).filter(
-    (element) => productPanel.contains(element) && isUsableControl(element),
+    (element) =>
+      isVisibleUsableControl(element) &&
+      (isPrimaryActionControl(element) ||
+        CART_DESTINATION_TEXT.test(textValue(element))),
   );
+  const upperPromotionalCards = new Set(findUpperPromotionalCartCards(document));
+
+  return Array.from(
+    productPanel.querySelectorAll<HTMLElement>('button, [role="button"]'),
+  ).filter((element) => {
+    if (
+      !isVisibleUsableControl(element) ||
+      !PROMOTIONAL_CART_TEXT.test(textValue(element))
+    ) {
+      return false;
+    }
+
+    return primaryControls.some(
+      (control) =>
+        control !== element &&
+        !element.contains(control) &&
+        !control.contains(element),
+    ) && ![...upperPromotionalCards].some((card) => card.contains(element));
+  });
+}
+
+function findUpperPromotionalCartCards(document: Document): HTMLElement[] {
+  const productPanel = document.querySelector<HTMLElement>("#rightContent");
+  if (!productPanel) return [];
+
+  const primaryControls = Array.from(
+    productPanel.querySelectorAll<HTMLElement>('button, [role="button"]'),
+  ).filter(
+    (element) =>
+      isVisibleUsableControl(element) && isPrimaryActionControl(element),
+  );
+  if (primaryControls.length === 0) return [];
+
   const cards = new Set<HTMLElement>();
-
-  for (const label of elementsWithOwnText(document, LIGHTNING_DEAL_TEXT)) {
-    if (!productPanel.contains(label)) continue;
-    const card = closestAncestorContainingControl(
-      label,
-      productPanel,
-      CART_DESTINATION_TEXT,
-    );
-    if (!card) continue;
-
-    const hasAlternativeControl = cartControls.some(
-      (control) => !card.contains(control),
-    );
-    if (hasAlternativeControl) cards.add(card);
+  for (const heading of elementsWithOwnText(
+    document,
+    PROMOTIONAL_CARD_HEADING,
+  )) {
+    if (!productPanel.contains(heading)) continue;
+    let current: HTMLElement | null = heading;
+    let card: HTMLElement | undefined;
+    while (current && current !== productPanel) {
+      if (
+        primaryControls.some((control) => current?.contains(control)) &&
+        textValue(current).length <= 700
+      ) {
+        card = current;
+      }
+      current = current.parentElement;
+    }
+    if (card) cards.add(card);
   }
-
   return [...cards];
 }
 
-function closestAncestorContainingControl(
-  element: HTMLElement,
-  boundary: HTMLElement,
-  pattern: RegExp,
-): HTMLElement | undefined {
-  let current: HTMLElement | null = element;
-  while (current && current !== boundary) {
-    if (interactiveElementsWithText(current.ownerDocument, pattern).some(
-      (control) => current?.contains(control),
-    )) {
-      return current;
+function findUrgencyBadgeContainers(document: Document): HTMLElement[] {
+  const badges = new Set<HTMLElement>();
+  for (const label of elementsWithOwnText(document, URGENCY_BADGE_TEXT)) {
+    let badge = label;
+    let current = label.parentElement;
+    for (let depth = 0; current && depth < 4; depth += 1) {
+      if (
+        current.matches("body, html, #rightContent, #mainHeader, main, [role='main']") ||
+        current.hasAttribute(DEHYPE_ELEMENT_ID) ||
+        textValue(current) !== textValue(label)
+      ) {
+        break;
+      }
+      badge = current;
+      current = current.parentElement;
     }
-    current = current.parentElement;
+    badges.add(badge);
   }
-  return undefined;
+  return [...badges];
+}
+
+
+function intersectsAny(
+  element: HTMLElement,
+  protectedElements: readonly HTMLElement[],
+): boolean {
+  return protectedElements.some(
+    (protectedElement) =>
+      element === protectedElement ||
+      element.contains(protectedElement) ||
+      protectedElement.contains(element),
+  );
 }
 
 function isUsableControl(element: HTMLElement): boolean {
@@ -602,9 +803,64 @@ function isUsableControl(element: HTMLElement): boolean {
   );
 }
 
-function isProtectedCommerceControl(element: HTMLElement): boolean {
-  return (
-    element.matches('button, input, select, [role="button"]') &&
-    PRIMARY_ACTION_TEXT.test(textValue(element))
-  );
+function isVisibleUsableControl(element: HTMLElement): boolean {
+  return isUsableControl(element) && isVisiblyRendered(element);
+}
+
+function isVisiblyRendered(element: HTMLElement): boolean {
+  if (element.hidden || element.closest("[hidden], [aria-hidden='true']")) {
+    return false;
+  }
+
+  // A target hidden by Dehype must still count as visible for subsequent
+  // adapter scans. Otherwise our own `display: none` makes the target vanish
+  // from the result, the rebuilder restores it, and the next Temu mutation
+  // suppresses it again.
+  const dehypeSuppressed =
+    element.closest<HTMLElement>("[data-dehype-suppressed]") !== null;
+
+  const view = element.ownerDocument.defaultView;
+  for (
+    let current: HTMLElement | null = element;
+    current;
+    current = current.parentElement
+  ) {
+    const inlineStyle = current.style;
+    if (
+      inlineStyle.display === "none" ||
+      inlineStyle.visibility === "hidden" ||
+      inlineStyle.visibility === "collapse" ||
+      (inlineStyle.opacity !== "" && Number(inlineStyle.opacity) === 0)
+    ) {
+      return false;
+    }
+    const style = dehypeSuppressed ? undefined : view?.getComputedStyle(current);
+    if (
+      style &&
+      (style.display === "none" ||
+        style.visibility === "hidden" ||
+        style.visibility === "collapse" ||
+        (style.opacity !== "" && Number(style.opacity) === 0))
+    ) {
+      return false;
+    }
+  }
+
+  // At this point no native hidden state or inline style hides the control.
+  // Dehype's stylesheet intentionally makes its own suppressed target have no
+  // layout boxes, so geometry cannot be used to decide whether it remains a
+  // usable commerce fallback on subsequent scans.
+  if (dehypeSuppressed) return true;
+
+  if (!view) return true;
+
+  const bounds = element.getBoundingClientRect();
+  if (
+    element.getClientRects().length === 0 &&
+    bounds.width === 0 &&
+    bounds.height === 0
+  ) {
+    return /\bjsdom\b/i.test(view.navigator.userAgent);
+  }
+  return true;
 }

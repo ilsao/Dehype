@@ -29,8 +29,11 @@ interface ReplacementEntry {
 
 interface NeutralizationEntry {
   element: HTMLElement;
-  marker: typeof SUPPRESSED_MARKER | typeof DEEMPHASIZED_MARKER;
-  originalMarker: AttributeSnapshot;
+  action: NeutralizationTarget["action"];
+  marker?: typeof SUPPRESSED_MARKER | typeof DEEMPHASIZED_MARKER;
+  originalMarker?: AttributeSnapshot;
+  originalTextNodes?: Array<{ node: Text; value: string }>;
+  replacementText?: string | undefined;
 }
 
 export interface InlineRebuildHandle {
@@ -125,8 +128,8 @@ export function applyInlineRebuild(
     for (const target of options.findNeutralizationTargets()) {
       const { element } = target;
       if (
-        !element.isConnected ||
-        (target.action === "suppress" &&
+        (!element.isConnected && target.action !== "remove") ||
+        ((target.action === "suppress" || target.action === "remove") &&
           replacements.some(
             ({ source, replacement }) =>
               element === source ||
@@ -142,22 +145,85 @@ export function applyInlineRebuild(
 
     for (const [element, entry] of neutralizations) {
       const nextTarget = nextTargets.get(element);
+      if (entry.action === "remove") {
+        // Keep the source node mounted so Temu's renderer does not recreate it.
+        // The suppression marker is reversible and remains stable across scans.
+        if (element.isConnected && entry.marker) {
+          element.setAttribute(entry.marker, "removed-container");
+        }
+        continue;
+      }
+      if (entry.action === "rewrite-text") {
+        if (nextTarget?.action === "rewrite-text") {
+          if (
+            nextTarget.replacementText !== undefined &&
+            ownText(element) !== nextTarget.replacementText
+          ) {
+            writeOwnText(entry.originalTextNodes, nextTarget.replacementText);
+          }
+          entry.replacementText = nextTarget.replacementText;
+          continue;
+        }
+        if (!nextTarget && ownText(element) === entry.replacementText) {
+          continue;
+        }
+        restoreOwnText(entry.originalTextNodes);
+        neutralizations.delete(element);
+        continue;
+      }
       const nextMarker = nextTarget ? markerFor(nextTarget) : undefined;
-      if (!nextTarget || nextMarker !== entry.marker) {
-        restoreAttribute(element, entry.marker, entry.originalMarker);
+      if (!nextTarget || nextTarget.action === "rewrite-text" || nextMarker !== entry.marker) {
+        if (entry.marker && entry.originalMarker) {
+          restoreAttribute(element, entry.marker, entry.originalMarker);
+        }
         neutralizations.delete(element);
       }
     }
 
     for (const [element, target] of nextTargets) {
-      const marker = markerFor(target);
       const existing = neutralizations.get(element);
+      if (existing?.action === "remove") continue;
+      if (
+        target.action === "deemphasize" &&
+        hasActiveRewriteDescendant(element, neutralizations)
+      ) {
+        continue;
+      }
+      if (target.action === "rewrite-text") {
+        if (!existing && target.replacementText !== undefined) {
+          const originalTextNodes = snapshotOwnTextNodes(element);
+          if (originalTextNodes.length === 0) continue;
+          neutralizations.set(element, {
+            element,
+            action: target.action,
+            originalTextNodes,
+            replacementText: target.replacementText,
+          });
+          writeOwnText(originalTextNodes, target.replacementText);
+          added += 1;
+        }
+        continue;
+      }
+      if (target.action === "remove") {
+        const marker = SUPPRESSED_MARKER;
+        neutralizations.set(element, {
+          element,
+          action: target.action,
+          marker,
+          originalMarker: snapshotAttribute(element, marker),
+        });
+        element.setAttribute(marker, target.presentation);
+        added += 1;
+        continue;
+      }
+      const marker = markerFor(target);
       if (existing) {
         element.setAttribute(marker, target.presentation);
         continue;
       }
       neutralizations.set(element, {
         element,
+        action: target.action,
         marker,
         originalMarker: snapshotAttribute(element, marker),
       });
@@ -197,8 +263,20 @@ export function applyInlineRebuild(
         replacement?.remove();
         restoreAttribute(source, ORIGINAL_MARKER, originalMarker);
       }
-      for (const { element, marker, originalMarker } of neutralizations.values()) {
-        restoreAttribute(element, marker, originalMarker);
+      for (const entry of [...neutralizations.values()].reverse()) {
+        if (entry.action === "remove") {
+          if (entry.marker && entry.originalMarker) {
+            restoreAttribute(entry.element, entry.marker, entry.originalMarker);
+          }
+          continue;
+        }
+        if (entry.action === "rewrite-text") {
+          restoreOwnText(entry.originalTextNodes);
+          continue;
+        }
+        if (entry.marker && entry.originalMarker) {
+          restoreAttribute(entry.element, entry.marker, entry.originalMarker);
+        }
       }
       if (layoutRoot && layoutRootMarker) {
         restoreAttribute(layoutRoot, LAYOUT_ROOT_MARKER, layoutRootMarker);
@@ -212,6 +290,54 @@ export function applyInlineRebuild(
       style.remove();
     },
   };
+}
+
+function snapshotOwnTextNodes(
+  element: HTMLElement,
+): Array<{ node: Text; value: string }> {
+  return Array.from(element.childNodes)
+    .filter((node): node is Text => node.nodeType === Node.TEXT_NODE)
+    .map((node) => ({ node, value: node.data }));
+}
+
+function writeOwnText(
+  snapshots: Array<{ node: Text; value: string }> | undefined,
+  replacement: string,
+): void {
+  if (!snapshots?.length) return;
+  snapshots.forEach(({ node }, index) => {
+    if (node.isConnected) node.data = index === 0 ? replacement : "";
+  });
+}
+
+function restoreOwnText(
+  snapshots: Array<{ node: Text; value: string }> | undefined,
+): void {
+  snapshots?.forEach(({ node, value }) => {
+    if (node.isConnected) node.data = value;
+  });
+}
+
+function ownText(element: HTMLElement): string {
+  return Array.from(element.childNodes)
+    .filter((node) => node.nodeType === Node.TEXT_NODE)
+    .map((node) => node.textContent ?? "")
+    .join(" ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function hasActiveRewriteDescendant(
+  element: HTMLElement,
+  neutralizations: ReadonlyMap<HTMLElement, NeutralizationEntry>,
+): boolean {
+  return [...neutralizations.values()].some(
+    (entry) =>
+      entry.action === "rewrite-text" &&
+      entry.element !== element &&
+      element.contains(entry.element) &&
+      ownText(entry.element) === entry.replacementText,
+  );
 }
 
 function markerFor(
@@ -403,11 +529,17 @@ function createPageStyle(
     }
     [${DEEMPHASIZED_MARKER}="neutral-action"] {
       border-color: transparent !important;
-      color: inherit !important;
-      background-color: transparent !important;
+      color: #263238 !important;
+      background-color: #f1f5f9 !important;
       background-image: none !important;
       box-shadow: none !important;
       text-shadow: none !important;
+    }
+    [${DEEMPHASIZED_MARKER}="neutral-action"] :not(img):not(picture):not(video) {
+      color: inherit !important;
+      -webkit-text-fill-color: currentColor !important;
+      background-color: transparent !important;
+      background-image: none !important;
     }
     [${DEEMPHASIZED_MARKER}="neutral-fact"] {
       border-color: transparent !important;

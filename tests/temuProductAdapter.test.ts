@@ -14,6 +14,22 @@ function createAdapter() {
   return new TemuProductAdapter(() => `test-id-${++nextId}`);
 }
 
+function markAsVisible(element: HTMLElement): void {
+  Object.defineProperty(element, "getBoundingClientRect", {
+    value: () => ({
+      x: 0,
+      y: 0,
+      width: 180,
+      height: 44,
+      top: 0,
+      right: 180,
+      bottom: 44,
+      left: 0,
+      toJSON: () => ({}),
+    }),
+  });
+}
+
 describe("TemuProductAdapter", () => {
   it("supports Temu product pages and rejects the homepage", () => {
     const adapter = createAdapter();
@@ -363,7 +379,275 @@ describe("TemuProductAdapter", () => {
     });
   });
 
-  it("suppresses the recommendation rail, sticky benefit ad, and redundant lightning card", () => {
+  it("suppresses the current Temu sale heading and Labour Day benefit banner", () => {
+    const document = new DOMParser().parseFromString(
+      `
+        <div id="rightContent">
+          <div class="Y3CaoPDB rm-KNEZ1" id="labour-day-banner">
+            <img alt="">
+            <div id="splide01">
+              <span>Free shipping</span>
+              <span>20% OFF on orders</span>
+            </div>
+          </div>
+          <section id="purchase-card">
+            <div class="_3mw8ps2R" id="sale-heading"><span id="big-sale">BIG SALE</span></div>
+            <label>Color: Olive green</label>
+            <select id="quantity"><option>1</option></select>
+            <button id="primary-cart">Add to cart</button>
+          </section>
+        </div>
+      `,
+      "text/html",
+    );
+
+    const targets = new TemuProductAdapter().findNeutralizationTargets(document);
+    const target = (id: string) =>
+      targets.find(({ element }) => element.id === id);
+
+    expect(target("labour-day-banner")).toMatchObject({
+      action: "suppress",
+      reason: "promotion",
+      presentation: "hidden-container",
+    });
+    expect(target("big-sale")).toMatchObject({
+      action: "suppress",
+      reason: "promotion",
+      presentation: "hidden-container",
+    });
+    expect(target("sale-heading")).toMatchObject({
+      action: "suppress",
+      reason: "promotion",
+      presentation: "hidden-container",
+    });
+    expect(target("purchase-card")).toBeUndefined();
+    expect(target("quantity")).toBeUndefined();
+    expect(target("primary-cart")).toMatchObject({
+      action: "deemphasize",
+      presentation: "neutral-action",
+    });
+  });
+
+  it("suppresses a promotional cart control when a primary control remains", () => {
+    const document = new DOMParser().parseFromString(
+      `
+        <div id="rightContent">
+          <button id="primary-cart">Add to cart</button>
+          <div role="button" id="promotional-cart">
+            <span id="promotional-label">-63% now! Add to cart!</span>
+            <span id="arrival-label">Arrives in 3 business days</span>
+          </div>
+        </div>
+      `,
+      "text/html",
+    );
+
+    const targets = new TemuProductAdapter().findNeutralizationTargets(document);
+    const target = (id: string) =>
+      targets.find(({ element }) => element.id === id);
+
+    expect(target("promotional-cart")).toMatchObject({
+      action: "suppress",
+      reason: "promotion",
+      presentation: "hidden-container",
+    });
+    expect(target("primary-cart")).toMatchObject({
+      action: "deemphasize",
+      presentation: "neutral-action",
+    });
+    expect(target("promotional-label")).toBeUndefined();
+    expect(target("arrival-label")).toBeUndefined();
+  });
+
+  it("preserves a promotional cart control when it is the only purchase control", () => {
+    const document = new DOMParser().parseFromString(
+      `
+        <div id="rightContent">
+          <div role="button" id="only-cart">-63% now! Add to cart!</div>
+        </div>
+      `,
+      "text/html",
+    );
+
+    const targets = new TemuProductAdapter().findNeutralizationTargets(document);
+    expect(
+      targets.find(({ element }) => element.id === "only-cart"),
+    ).toMatchObject({
+      action: "rewrite-text",
+      presentation: "neutral-action",
+      replacementText: "Add to cart",
+    });
+  });
+
+  it("targets the complete promotional card and urgency badge containers", () => {
+    const document = new DOMParser().parseFromString(
+      `
+        <div id="urgency-row">
+          <div id="last-day-badge"><span>LAST DAY</span></div>
+          <div id="final-badge"><span>FINAL 45</span></div>
+        </div>
+        <div id="rightContent">
+          <section id="amazing-find-card">
+            <header><strong>AMAZING FIND</strong><span>Shop on Temu</span></header>
+            <div><img src="product.png"><span>Model: Drill 3pcs</span></div>
+            <label>Qty <select><option>1</option></select></label>
+            <button id="card-cart">Add to cart</button>
+          </section>
+          <div role="button" id="primary-cart"><div><span>Add to cart</span><span>Arrives in 3 business days</span></div></div>
+        </div>
+      `,
+      "text/html",
+    );
+
+    const targets = new TemuProductAdapter().findNeutralizationTargets(document);
+    const target = (id: string) =>
+      targets.find(({ element }) => element.id === id);
+
+    expect(target("amazing-find-card")).toMatchObject({
+      action: "remove",
+      reason: "promotion",
+      presentation: "removed-container",
+    });
+    expect(target("last-day-badge")).toMatchObject({
+      action: "suppress",
+      reason: "countdown",
+      presentation: "hidden-container",
+    });
+    expect(target("final-badge")).toMatchObject({
+      action: "suppress",
+      reason: "countdown",
+      presentation: "hidden-container",
+    });
+  });
+
+  it.each(["Great Find", "Top Pick", "Hot Deal", "Amazing Offer"])(
+    "recognizes the %s promotional-card heading",
+    (heading) => {
+      const document = new DOMParser().parseFromString(
+        `<div id="rightContent">
+          <section id="offer-card"><strong>${heading}</strong><button>Add to cart</button></section>
+          <button id="primary-cart">Add to cart</button>
+        </div>`,
+        "text/html",
+      );
+
+      expect(
+        new TemuProductAdapter()
+          .findNeutralizationTargets(document)
+          .find(({ element }) => element.id === "offer-card"),
+      ).toMatchObject({ action: "remove", reason: "promotion" });
+    },
+  );
+
+  it.each(["Final Day", "Last 30", "final-day!", "LAST: 7"])(
+    "recognizes the %s urgency badge",
+    (copy) => {
+      const document = new DOMParser().parseFromString(
+        `<div id="badge"><span>${copy}</span></div>`,
+        "text/html",
+      );
+
+      expect(
+        new TemuProductAdapter()
+          .findNeutralizationTargets(document)
+          .find(({ element }) => element.id === "badge"),
+      ).toMatchObject({ action: "suppress", reason: "countdown" });
+    },
+  );
+
+  it("does not require promotional blocks or match isolated generic words", () => {
+    const document = new DOMParser().parseFromString(
+      `<div id="rightContent">
+        <h1>Amazing cordless drill</h1>
+        <p>The final specification is available.</p>
+        <span>45</span>
+        <button id="primary-cart">Add to cart</button>
+      </div>`,
+      "text/html",
+    );
+    const targets = new TemuProductAdapter().findNeutralizationTargets(document);
+
+    expect(targets.some(({ action }) => action === "remove")).toBe(false);
+    expect(targets.filter(({ reason }) => reason === "countdown")).toEqual([]);
+  });
+
+  it("keeps the only purchase card and neutralizes its promotional heading", () => {
+    const document = new DOMParser().parseFromString(
+      `<div id="rightContent">
+        <section id="only-card">
+          <strong id="heading">AMAZING FIND</strong>
+          <button id="only-cart">Add to cart</button>
+        </section>
+      </div>`,
+      "text/html",
+    );
+    const targets = new TemuProductAdapter().findNeutralizationTargets(document);
+
+    expect(targets.find(({ element }) => element.id === "only-card")).toBeUndefined();
+    expect(targets.find(({ element }) => element.id === "heading")).toMatchObject({
+      action: "suppress",
+      reason: "promotion",
+    });
+    expect(targets.find(({ element }) => element.id === "only-cart")).toMatchObject({
+      action: "deemphasize",
+    });
+  });
+
+  it("preserves a visible promotional cart control when the plain cart control is hidden", () => {
+    const document = new DOMParser().parseFromString(
+      `
+        <div id="rightContent">
+          <button id="hidden-primary-cart" style="display: none">Add to cart</button>
+          <section data-dehype-persuasion id="promo-shell">
+            <button id="visible-promotional-cart">
+              <span id="promo-label">-9% now! Add to cart!</span>
+            </button>
+          </section>
+        </div>
+      `,
+      "text/html",
+    );
+    markAsVisible(
+      document.querySelector<HTMLElement>("#visible-promotional-cart")!,
+    );
+
+    const targets = new TemuProductAdapter().findNeutralizationTargets(document);
+    const target = (id: string) =>
+      targets.find(({ element }) => element.id === id);
+
+    expect(target("promo-label")).toMatchObject({
+      action: "rewrite-text",
+      reason: "promotion",
+      presentation: "neutral-action",
+      replacementText: "Add to cart",
+    });
+    expect(target("promo-shell")).toBeUndefined();
+    expect(target("visible-promotional-cart")).toBeUndefined();
+  });
+
+  it("keeps localized cart copy when neutralizing a promotional cart control", () => {
+    const document = new DOMParser().parseFromString(
+      `
+        <div id="rightContent">
+          <button id="cart">-63% now! 加入購物車!</button>
+        </div>
+      `,
+      "text/html",
+    );
+    markAsVisible(document.querySelector<HTMLElement>("#cart")!);
+
+    const targets = new TemuProductAdapter().findNeutralizationTargets(document);
+
+    expect(
+      targets.find(({ element }) => element.id === "cart"),
+    ).toMatchObject({
+      action: "rewrite-text",
+      presentation: "neutral-action",
+      replacementText: "加入購物車",
+    });
+  });
+
+  it("suppresses unrelated promotion while preserving every Go to cart control", () => {
     const document = new DOMParser().parseFromString(
       `
         <div id="main_scale">
@@ -400,11 +684,11 @@ describe("TemuProductAdapter", () => {
       action: "suppress",
       reason: "promotion",
     });
-    expect(target("lightning-card")).toMatchObject({
-      action: "suppress",
-      reason: "promotion",
-    });
+    expect(target("lightning-card")).toBeUndefined();
     expect(target("primary-purchase-row")).toBeUndefined();
+    expect(
+      targets.some(({ element }) => /go to cart/i.test(element.textContent ?? "")),
+    ).toBe(false);
     expect(adapter.findNeutralLayoutRoot(document)?.className).toBe("baseContent");
   });
 
@@ -425,6 +709,118 @@ describe("TemuProductAdapter", () => {
     const targets = new TemuProductAdapter().findNeutralizationTargets(document);
     expect(
       targets.find(({ element }) => element.id === "only-purchase-card"),
+    ).toBeUndefined();
+  });
+
+  it("preserves every Go to cart summary and quantity action row", () => {
+    const document = new DOMParser().parseFromString(
+      `
+        <div id="rightContent">
+          <section id="upper-cart-summary">
+            <img src="https://example.test/selected-variant.png">
+            <span>Added: 2</span><label>Qty<select><option>1</option></select></label>
+            <div role="button">Go to cart</div>
+          </section>
+          <section id="lower-cart-row" class="_100Uy0HO">
+            <button aria-label="decrease quantity"></button>
+            <span>1 Added 2</span>
+            <button aria-label="increase quantity"></button>
+            <div role="button">Go to cart</div>
+          </section>
+        </div>
+      `,
+      "text/html",
+    );
+
+    const targets = new TemuProductAdapter().findNeutralizationTargets(document);
+    const target = (id: string) =>
+      targets.find(({ element }) => element.id === id);
+
+    expect(target("upper-cart-summary")).toBeUndefined();
+    expect(target("lower-cart-row")).toBeUndefined();
+  });
+
+  it("recognizes visible minus and plus controls in the lower quantity action row", () => {
+    const document = new DOMParser().parseFromString(
+      `
+        <div id="rightContent">
+          <section id="upper-cart-summary">
+            <span>Added: 1</span>
+            <label>Qty <select><option>1</option></select></label>
+            <div role="button">Go to cart</div>
+          </section>
+          <section id="lower-cart-row">
+            <button>−</button>
+            <span>1 Added</span>
+            <button>+</button>
+            <div role="button">Go to cart</div>
+          </section>
+        </div>
+      `,
+      "text/html",
+    );
+
+    const targets = new TemuProductAdapter().findNeutralizationTargets(document);
+    const target = (id: string) =>
+      targets.find(({ element }) => element.id === id);
+
+    expect(target("upper-cart-summary")).toBeUndefined();
+    expect(target("lower-cart-row")).toBeUndefined();
+  });
+
+  it("protects nested, disabled, localized, and out-of-panel Go to cart controls", () => {
+    const document = new DOMParser().parseFromString(
+      `
+        <section data-dehype-persuasion id="outside-promotion">
+          <button id="outside-cart"><span id="outside-label">Go to cart</span></button>
+        </section>
+        <div id="rightContent">
+          <section data-dehype-persuasion id="disabled-promotion">
+            <button id="disabled-cart" disabled><span>前往購物車</span></button>
+          </section>
+          <section data-dehype-persuasion id="aria-disabled-promotion">
+            <div role="button" id="aria-disabled-cart" aria-disabled="true">
+              <span>前往购物车</span>
+            </div>
+          </section>
+        </div>
+      `,
+      "text/html",
+    );
+
+    const targets = new TemuProductAdapter().findNeutralizationTargets(document);
+    const protectedIds = new Set([
+      "outside-promotion",
+      "outside-cart",
+      "outside-label",
+      "disabled-promotion",
+      "disabled-cart",
+      "aria-disabled-promotion",
+      "aria-disabled-cart",
+    ]);
+
+    expect(
+      targets.filter(({ element }) => protectedIds.has(element.id)),
+    ).toEqual([]);
+  });
+
+  it("preserves an upper cart summary when no lower quantity action row exists", () => {
+    const document = new DOMParser().parseFromString(
+      `
+        <div id="rightContent">
+          <section id="only-cart-summary">
+            <span>Added: 2</span>
+            <label>Qty <select><option>1</option></select></label>
+            <div role="button">Go to cart</div>
+          </section>
+        </div>
+      `,
+      "text/html",
+    );
+
+    const targets = new TemuProductAdapter().findNeutralizationTargets(document);
+    expect(
+      targets.find(({ element }) => element.id === "only-cart-summary"),
     ).toBeUndefined();
   });
 });

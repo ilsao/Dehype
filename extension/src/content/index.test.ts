@@ -132,6 +132,166 @@ describe("content-script integration", () => {
     expect(document.querySelector("[data-dehype-suppressed]")).toBeNull();
   });
 
+  it("suppresses a sale heading container and a promotional cart control added by text update", async () => {
+    document.body.innerHTML = `
+      <main>
+        <h1 class="_25g_jM0z">Olive oil dispenser</h1>
+        <div data-testid="current-price">$12.99</div>
+        <div id="rightContent">
+          <div id="sale-heading"><div><span>BIG SALE</span></div></div>
+          <button id="primary-cart">Add to cart</button>
+          <div id="dynamic-cart" role="button"><span>Arrives soon</span></div>
+        </div>
+      </main>
+    `;
+
+    await rebuildCurrentProduct();
+    expect(document.querySelector("#sale-heading")?.getAttribute(
+      "data-dehype-suppressed",
+    )).toBe("hidden-container");
+    expect(document.querySelector("#dynamic-cart")?.hasAttribute(
+      "data-dehype-suppressed",
+    )).toBe(false);
+
+    document.querySelector("#dynamic-cart span")!.textContent =
+      "-63% now! Add to cart!";
+    await vi.waitFor(() =>
+      expect(document.querySelector("#dynamic-cart")?.getAttribute(
+        "data-dehype-suppressed",
+      )).toBe("hidden-container"),
+    );
+
+    restoreCurrentProduct();
+    expect(document.querySelector("#sale-heading")?.hasAttribute(
+      "data-dehype-suppressed",
+    )).toBe(false);
+    expect(document.querySelector("#dynamic-cart")?.hasAttribute(
+      "data-dehype-suppressed",
+    )).toBe(false);
+  });
+
+  it("never modifies dynamically inserted Go to cart controls", async () => {
+    document.body.innerHTML = `
+      <main>
+        <h1 class="_25g_jM0z">Olive oil dispenser</h1>
+        <div data-testid="current-price">$12.99</div>
+        <div id="rightContent">
+          <section id="lower-cart-row">
+            <button aria-label="decrease quantity"></button>
+            <button aria-label="increase quantity"></button>
+            <div role="button">Go to cart</div>
+          </section>
+        </div>
+      </main>
+    `;
+
+    await rebuildCurrentProduct();
+    document.querySelector("#rightContent")!.insertAdjacentHTML(
+      "afterbegin",
+      `
+        <section id="upper-cart-summary">
+          <span>Added: 2</span>
+          <label>Qty <select><option>1</option></select></label>
+          <div role="button">Go to cart</div>
+        </section>
+      `,
+    );
+
+    document.querySelector("#rightContent")!.append(document.createElement("span"));
+    await new Promise((resolve) => window.setTimeout(resolve));
+    for (const element of document.querySelectorAll(
+      "#upper-cart-summary, #upper-cart-summary *, #lower-cart-row, #lower-cart-row *",
+    )) {
+      expect(element.hasAttribute("data-dehype-suppressed")).toBe(false);
+      expect(element.hasAttribute("data-dehype-deemphasized")).toBe(false);
+    }
+
+    restoreCurrentProduct();
+    expect(document.querySelector("#upper-cart-summary")).not.toBeNull();
+  });
+
+  it("stably suppresses the upper sale card while preserving the lower promotional action", async () => {
+    document.body.innerHTML = `
+      <main>
+        <h1 class="_25g_jM0z">Wire stripper</h1>
+        <div data-testid="current-price">$12.99</div>
+        <div id="rightContent">
+          <section id="upper-sale-card">
+            <span>BIG SALE</span>
+            <button>Add to cart</button>
+          </section>
+          <div id="lower-promotional-action" role="button">
+            <span>-61% now! Add to cart!</span>
+            <span>Free shipping for this item</span>
+          </div>
+        </div>
+      </main>
+    `;
+
+    await rebuildCurrentProduct();
+    expect(document.querySelector("#upper-sale-card")?.getAttribute(
+      "data-dehype-suppressed",
+    )).toBe("removed-container");
+    expect(document.querySelector("#lower-promotional-action")?.getAttribute(
+      "data-dehype-suppressed",
+    )).toBeNull();
+
+    document.querySelector("#lower-promotional-action span:last-child")!.textContent =
+      "Free shipping for this item - updated";
+    document.querySelector("#rightContent")!.append(document.createElement("span"));
+    await vi.waitFor(() =>
+      expect(document.querySelector("#upper-sale-card")?.getAttribute(
+        "data-dehype-suppressed",
+      )).toBe("removed-container"),
+    );
+
+    restoreCurrentProduct();
+    expect(document.querySelector("#upper-sale-card")).not.toBeNull();
+    expect(document.querySelector("#lower-promotional-action")).not.toBeNull();
+  });
+
+  it("suppresses screenshot-style offer and urgency containers across rescans and restores them", async () => {
+    document.body.innerHTML = `
+      <main>
+        <h1 class="_25g_jM0z">Taper drill bits</h1>
+        <div data-testid="current-price">$12.99</div>
+        <div id="last-day-badge"><span>LAST DAY</span></div>
+        <div id="final-badge"><span>FINAL 45</span></div>
+        <div id="rightContent">
+          <section id="amazing-find-card">
+            <header><strong>AMAZING FIND</strong><span>Shop on Temu</span></header>
+            <div>Model: 5–35mm Tapering Drill 3pcs</div>
+            <label>Qty <select><option>1</option></select></label>
+            <button>Add to cart</button>
+          </section>
+          <div role="button" id="primary-cart"><div><span>Add to cart</span><span>Arrives in 3 business days</span></div></div>
+        </div>
+      </main>
+    `;
+
+    await rebuildCurrentProduct();
+    for (const [id, presentation] of [
+      ["amazing-find-card", "removed-container"],
+      ["last-day-badge", "hidden-container"],
+      ["final-badge", "hidden-container"],
+    ] as const) {
+      expect(document.querySelector(`#${id}`)?.getAttribute(
+        "data-dehype-suppressed",
+      )).toBe(presentation);
+    }
+
+    document.querySelector("#rightContent")?.append(document.createElement("span"));
+    await new Promise((resolve) => window.setTimeout(resolve));
+    expect(document.querySelector("#amazing-find-card")?.getAttribute(
+      "data-dehype-suppressed",
+    )).toBe("removed-container");
+
+    restoreCurrentProduct();
+    expect(document.querySelectorAll("[data-dehype-suppressed]")).toHaveLength(0);
+    expect(document.querySelector("#amazing-find-card")).not.toBeNull();
+    expect(document.querySelector("#primary-cart")).not.toBeNull();
+  });
+
   it("returns an error when analysis has no visible DOM target", async () => {
     vi.useFakeTimers();
     document.body.innerHTML = "";
