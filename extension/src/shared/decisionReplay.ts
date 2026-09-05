@@ -1,4 +1,5 @@
 import type { ProductInfo } from "./productInfo";
+import { buildDecisionTrace, type DecisionTrace } from "./decisionTrace";
 
 export const DECISION_REPLAY_VERSION = 1;
 
@@ -76,6 +77,7 @@ export interface ReplayAnalysisPayload {
     timestamp: number;
   }>;
   persuasionRecords: PersuasionRecord[];
+  trace: DecisionTrace;
 }
 
 export function createDecisionSession(now = Date.now()): DecisionSession {
@@ -134,6 +136,7 @@ export function productSnapshotFromInfo(
 export function buildReplayAnalysisPayload(
   session: DecisionSession,
 ): ReplayAnalysisPayload {
+  const trace = buildDecisionTrace(session);
   const products = new Map<string, ReplayAnalysisPayload["products"][number]>();
   const persuasion = new Map<string, PersuasionRecord>();
   for (const event of session.events) {
@@ -187,6 +190,7 @@ export function buildReplayAnalysisPayload(
         timestamp,
       })),
     persuasionRecords: [...persuasion.values()],
+    trace,
   };
 }
 

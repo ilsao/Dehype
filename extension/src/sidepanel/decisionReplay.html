@@ -26,6 +26,16 @@
         <label>Budget <input id="budget" type="text" placeholder="$30" /></label>
         <button id="save-intent" class="secondary" type="button">Save</button>
       </section>
+      <section class="dashboard" aria-labelledby="dashboard-heading">
+        <div class="section-heading"><p class="section-label">Deterministic replay</p><h2 id="dashboard-heading">What happened</h2></div>
+        <div id="kpis" class="kpis"></div>
+        <div class="dashboard-grid">
+          <article class="chart-panel"><p class="section-label">Attention Share</p><div id="attention-share" class="bar-chart"></div></article>
+          <article class="chart-panel"><p class="section-label">Decision Journey</p><div id="journey-chart" class="journey-chart"></div></article>
+          <article class="chart-panel"><p class="section-label">Price Path</p><div id="price-path" class="price-path"></div></article>
+          <article class="chart-panel"><p class="section-label">Persuasion Signals Encountered</p><div id="persuasion-chart" class="bar-chart"></div></article>
+        </div>
+      </section>
       <section aria-labelledby="timeline-heading">
         <div class="section-heading"><p class="section-label">Sequence</p><h2 id="timeline-heading">Timeline</h2></div>
         <ol id="timeline" class="timeline"><li class="empty">No product activity yet.</li></ol>
@@ -35,7 +45,7 @@
         <div id="products" class="products"><p class="empty">No products viewed yet.</p></div>
       </section>
       <section aria-labelledby="analysis-heading">
-        <div class="section-heading"><p class="section-label">Optional</p><h2 id="analysis-heading">Analysis</h2></div>
+        <div class="section-heading"><p class="section-label">Optional Gemini reflection</p><h2 id="analysis-heading">What might this mean?</h2></div>
         <div id="analysis" class="analysis"><p class="empty">Analysis stays on demand and does not affect collection.</p></div>
         <button id="configure-gemini" class="secondary configure-button" type="button" hidden>Open Gemini settings</button>
       </section>
