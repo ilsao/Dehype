@@ -1,7 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 
 import {
+  analyzeNeedMatch,
   neutralizeProductValues,
+  parseNeedMatchResult,
   parseNeutralizedValues,
 } from "./aiProvider.js";
 import type { ProviderFetch } from "./aiProvider.js";
@@ -10,6 +12,22 @@ const productValues = {
   name: "HOT SALE Wireless Earbuds!",
   currentPrice: "$12.99 today only",
   stockAmount: "Only 3 left",
+};
+
+const userNeed = {
+  minBudget: 10,
+  maxBudget: 50,
+  mustHave: ["USB-C"],
+  niceToHave: ["Quiet fan"],
+  exclude: ["Subscription"],
+};
+
+const needMatchResponse = {
+  explanation: "The available facts satisfy the required criteria.",
+  budget: { status: "matched", explanation: "The price is within budget." },
+  mustHave: [{ status: "matched", explanation: "USB-C is listed." }],
+  niceToHave: [{ status: "mismatched", explanation: "Noise is not discussed." }],
+  exclude: [{ status: "matched", explanation: "No subscription is listed." }],
 };
 
 function providerResponse(data: unknown, ok = true) {
@@ -117,6 +135,61 @@ describe("AI provider requests", () => {
       }),
     ).rejects.toThrow("Provider request failed: Invalid API key");
   });
+
+  it.each([
+    {
+      provider: "openai" as const,
+      model: "gpt-match",
+      apiKey: "match-o",
+      data: { output_text: JSON.stringify(needMatchResponse) },
+      header: "authorization",
+      headerValue: "Bearer match-o",
+    },
+    {
+      provider: "gemini" as const,
+      model: "gemini-match",
+      apiKey: "match-g",
+      data: {
+        candidates: [{ content: { parts: [{ text: JSON.stringify(needMatchResponse) }] } }],
+      },
+      header: "x-goog-api-key",
+      headerValue: "match-g",
+    },
+    {
+      provider: "claude" as const,
+      model: "claude-match",
+      apiKey: "match-c",
+      data: { content: [{ text: JSON.stringify(needMatchResponse) }] },
+      header: "x-api-key",
+      headerValue: "match-c",
+    },
+  ])("uses saved $provider settings for Need Match", async (testCase) => {
+    const fetchImpl = vi.fn<ProviderFetch>(async () =>
+      providerResponse(testCase.data),
+    );
+
+    await expect(
+      analyzeNeedMatch({
+        settings: {
+          provider: testCase.provider,
+          model: testCase.model,
+          apiKey: testCase.apiKey,
+        },
+        productValues: { ...productValues, domId: "dom-node-id" },
+        userNeed,
+        fetchImpl,
+      }),
+    ).resolves.toMatchObject({ status: "matched", productName: productValues.name });
+
+    const [url, request] = fetchImpl.mock.calls[0]!;
+    expect(new Headers(request.headers).get(testCase.header)).toBe(
+      testCase.headerValue,
+    );
+    expect(`${url} ${request.body as string}`).toContain(testCase.model);
+    expect(request.body as string).toContain("USB-C");
+    expect(request.body as string).not.toContain("dom-node-id");
+    expect(request.body as string).not.toContain(testCase.apiKey);
+  });
 });
 
 describe("AI response parsing", () => {
@@ -148,5 +221,100 @@ describe("AI response parsing", () => {
         productValues,
       ),
     ).toThrow("no usable product fields");
+  });
+});
+
+describe("Need Match response parsing", () => {
+  it("accepts fenced JSON, restores local requirements, and ignores nice-to-have mismatches", () => {
+    const responseWithUntrustedRequirements = {
+      ...needMatchResponse,
+      mustHave: [{ ...needMatchResponse.mustHave[0], requirement: "changed" }],
+    };
+
+    expect(
+      parseNeedMatchResult(
+        `\`\`\`json\n${JSON.stringify(responseWithUntrustedRequirements)}\n\`\`\``,
+        productValues,
+        userNeed,
+      ),
+    ).toMatchObject({
+      status: "matched",
+      mustHave: [{ requirement: "USB-C", status: "matched" }],
+      niceToHave: [{ requirement: "Quiet fan", status: "mismatched" }],
+    });
+  });
+
+  it("computes mismatched and unknown overall states from hard criteria", () => {
+    expect(
+      parseNeedMatchResult(
+        JSON.stringify({
+          ...needMatchResponse,
+          budget: { status: "mismatched", explanation: "Too expensive." },
+        }),
+        productValues,
+        userNeed,
+      ).status,
+    ).toBe("mismatched");
+
+    expect(
+      parseNeedMatchResult(
+        JSON.stringify({
+          ...needMatchResponse,
+          mustHave: [{ status: "unknown", explanation: "Not specified." }],
+        }),
+        productValues,
+        userNeed,
+      ).status,
+    ).toBe("unknown");
+
+    expect(
+      parseNeedMatchResult(
+        JSON.stringify({
+          explanation: "No required criteria were saved.",
+          budget: null,
+          mustHave: [],
+          niceToHave: [],
+          exclude: [],
+        }),
+        productValues,
+        {
+          minBudget: null,
+          maxBudget: null,
+          mustHave: [],
+          niceToHave: [],
+          exclude: [],
+        },
+      ).status,
+    ).toBe("unknown");
+  });
+
+  it("rejects malformed structures and invalid statuses", () => {
+    expect(() => parseNeedMatchResult("not json", productValues, userNeed)).toThrow(
+      "invalid JSON",
+    );
+    expect(() =>
+      parseNeedMatchResult(
+        JSON.stringify({ ...needMatchResponse, explanation: "" }),
+        productValues,
+        userNeed,
+      ),
+    ).toThrow("malformed need match response");
+    expect(() =>
+      parseNeedMatchResult(
+        JSON.stringify({
+          ...needMatchResponse,
+          mustHave: [{ status: "maybe", explanation: "Unclear." }],
+        }),
+        productValues,
+        userNeed,
+      ),
+    ).toThrow("malformed need match response");
+    expect(() =>
+      parseNeedMatchResult(
+        JSON.stringify({ ...needMatchResponse, exclude: [] }),
+        productValues,
+        userNeed,
+      ),
+    ).toThrow("malformed need match response");
   });
 });

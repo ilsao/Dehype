@@ -7,6 +7,16 @@ import {
   type UserNeed,
   type UserNeedFormValues,
 } from "./userNeed.js";
+import {
+  clearNeedMatchAnalysis,
+  loadNeedMatchAnalysis,
+  NEED_MATCH_STORAGE_KEY,
+  validateNeedMatchAnalysisState,
+  type NeedMatchAnalysisState,
+  type NeedMatchAssessment,
+  type NeedMatchItem,
+  type NeedMatchStatus,
+} from "../shared/needMatch.js";
 
 const form = requiredElement<HTMLFormElement>("#user-need-form");
 const fields = requiredElement<HTMLFieldSetElement>("#user-need-fields");
@@ -27,9 +37,15 @@ const summaryMustHave = requiredElement<HTMLUListElement>("#summary-must-have");
 const summaryNiceToHave = requiredElement<HTMLUListElement>("#summary-nice-to-have");
 const summaryExclude = requiredElement<HTMLUListElement>("#summary-exclude");
 const status = requiredElement<HTMLElement>("#status");
+const needMatchSection = requiredElement<HTMLElement>("#need-match-section");
+const needMatchStatus = requiredElement<HTMLElement>("#need-match-status");
+const needMatchProduct = requiredElement<HTMLElement>("#need-match-product");
+const needMatchExplanation = requiredElement<HTMLElement>("#need-match-explanation");
+const needMatchDetails = requiredElement<HTMLElement>("#need-match-details");
 
 let hasSavedValue = false;
 let isEditing = true;
+let needMatchViewRevision = 0;
 
 form.addEventListener("input", () => {
   if (!isEditing) {
@@ -63,16 +79,24 @@ form.addEventListener("submit", async (event) => {
 });
 
 editButton.addEventListener("click", () => {
+  hideNeedMatchAnalysis();
+  void clearNeedMatchAnalysis(chrome.storage.local).catch((error) => {
+    setStatus(errorMessage(error), "error");
+  });
   setEditing(true);
   minBudgetInput.focus();
   setStatus("Editing user needs.", "neutral");
 });
 
 resetButton.addEventListener("click", async () => {
+  hideNeedMatchAnalysis();
   setBusy(true);
 
   try {
-    await resetUserNeed(chrome.storage.local);
+    await Promise.all([
+      resetUserNeed(chrome.storage.local),
+      clearNeedMatchAnalysis(chrome.storage.local),
+    ]);
     const empty = emptyUserNeed();
     hasSavedValue = false;
     populateForm(empty);
@@ -88,7 +112,29 @@ resetButton.addEventListener("click", async () => {
 
 void initialize();
 
+chrome.storage.onChanged.addListener((changes, areaName) => {
+  if (areaName !== "local" || !(NEED_MATCH_STORAGE_KEY in changes)) {
+    return;
+  }
+
+  const value = changes[NEED_MATCH_STORAGE_KEY]?.newValue;
+  needMatchViewRevision += 1;
+
+  if (value === undefined) {
+    hideNeedMatchAnalysis();
+    return;
+  }
+
+  try {
+    renderNeedMatchAnalysis(validateNeedMatchAnalysisState(value));
+  } catch (error) {
+    renderNeedMatchError(errorMessage(error));
+  }
+});
+
 async function initialize(): Promise<void> {
+  void initializeNeedMatchAnalysis();
+
   try {
     const stored = await loadUserNeed(chrome.storage.local);
     const userNeed = stored ?? emptyUserNeed();
@@ -105,6 +151,22 @@ async function initialize(): Promise<void> {
     renderSummary(emptyUserNeed());
     setEditing(true);
     setStatus(errorMessage(error), "error");
+  }
+}
+
+async function initializeNeedMatchAnalysis(): Promise<void> {
+  const revision = needMatchViewRevision;
+
+  try {
+    const analysis = await loadNeedMatchAnalysis(chrome.storage.local);
+
+    if (analysis && revision === needMatchViewRevision) {
+      renderNeedMatchAnalysis(analysis);
+    }
+  } catch (error) {
+    if (revision === needMatchViewRevision) {
+      renderNeedMatchError(errorMessage(error));
+    }
   }
 }
 
@@ -152,6 +214,103 @@ function renderList(target: HTMLUListElement, items: string[]): void {
     listItem.textContent = item;
     target.append(listItem);
   }
+}
+
+function renderNeedMatchAnalysis(analysis: NeedMatchAnalysisState): void {
+  needMatchSection.hidden = false;
+  needMatchDetails.replaceChildren();
+  delete needMatchStatus.dataset.matchStatus;
+
+  if (analysis.state === "analyzing") {
+    needMatchStatus.textContent = "Analyzing";
+    needMatchProduct.textContent = "";
+    needMatchExplanation.textContent = "Comparing this product with your saved needs...";
+    return;
+  }
+
+  if (analysis.state === "error") {
+    renderNeedMatchError(analysis.message);
+    return;
+  }
+
+  const { result } = analysis;
+  setMatchStatus(needMatchStatus, result.status);
+  needMatchProduct.textContent = result.productName;
+  needMatchExplanation.textContent = result.explanation;
+  appendAssessmentGroup(
+    "Budget",
+    result.budget ? [{ requirement: "Saved budget range", ...result.budget }] : [],
+  );
+  appendAssessmentGroup("Must have", result.mustHave);
+  appendAssessmentGroup("Nice to have", result.niceToHave);
+  appendAssessmentGroup("Exclude", result.exclude);
+}
+
+function renderNeedMatchError(message: string): void {
+  needMatchSection.hidden = false;
+  needMatchStatus.textContent = "Error";
+  needMatchStatus.dataset.matchStatus = "mismatched";
+  needMatchProduct.textContent = "";
+  needMatchExplanation.textContent = message;
+  needMatchDetails.replaceChildren();
+}
+
+function hideNeedMatchAnalysis(): void {
+  needMatchViewRevision += 1;
+  needMatchSection.hidden = true;
+  needMatchProduct.textContent = "";
+  needMatchExplanation.textContent = "";
+  needMatchDetails.replaceChildren();
+}
+
+function appendAssessmentGroup(title: string, items: NeedMatchItem[]): void {
+  const group = document.createElement("section");
+  group.className = "assessment-group";
+  const heading = document.createElement("h3");
+  heading.textContent = title;
+  group.append(heading);
+
+  if (items.length === 0) {
+    const empty = document.createElement("p");
+    empty.className = "assessment-explanation";
+    empty.textContent = "Not set";
+    group.append(empty);
+  } else {
+    const list = document.createElement("ul");
+    list.className = "assessment-list";
+
+    for (const item of items) {
+      list.append(createAssessmentItem(item.requirement, item));
+    }
+
+    group.append(list);
+  }
+
+  needMatchDetails.append(group);
+}
+
+function createAssessmentItem(
+  requirement: string,
+  assessment: NeedMatchAssessment,
+): HTMLLIElement {
+  const item = document.createElement("li");
+  item.className = "assessment-item";
+  const requirementElement = document.createElement("p");
+  requirementElement.className = "assessment-requirement";
+  requirementElement.textContent = requirement;
+  const statusElement = document.createElement("span");
+  statusElement.className = "assessment-status";
+  setMatchStatus(statusElement, assessment.status);
+  const explanation = document.createElement("p");
+  explanation.className = "assessment-explanation";
+  explanation.textContent = assessment.explanation;
+  item.append(requirementElement, statusElement, explanation);
+  return item;
+}
+
+function setMatchStatus(element: HTMLElement, matchStatus: NeedMatchStatus): void {
+  element.textContent = matchStatus;
+  element.dataset.matchStatus = matchStatus;
 }
 
 function setEditing(editing: boolean): void {

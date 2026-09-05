@@ -69,6 +69,7 @@ neutralizeButton.addEventListener("click", async () => {
     await saveCurrentSettings();
     const response = await sendMessageToActiveTab<PopupActionResponse>(
       chrome.tabs,
+      chrome.scripting,
       { type: "DEHYPE_REBUILD_CURRENT_PRODUCT" },
     );
 
@@ -98,6 +99,7 @@ restoreButton.addEventListener("click", async () => {
   try {
     const response = await sendMessageToActiveTab<PopupActionResponse>(
       chrome.tabs,
+      chrome.scripting,
       { type: "DEHYPE_RESTORE_CURRENT_PRODUCT" },
     );
 

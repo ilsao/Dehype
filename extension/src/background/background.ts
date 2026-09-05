@@ -1,8 +1,7 @@
-import { neutralizeProductValues } from "./aiProvider.js";
+import { runNeutralizeWorkflow } from "./neutralizeWorkflow.js";
 import { neutralizeValuesLocally } from "./localNeutralizer.js";
 import {
   getAiSettingsStatus,
-  loadAiSettings,
 } from "../shared/aiSettings.js";
 import type {
   NeutralizeProductValuesRequest,
@@ -48,13 +47,10 @@ chrome.runtime.onMessage.addListener((message: unknown, _sender, sendResponse) =
 async function neutralizeWithSavedSettings(
   productValues: ProductInfoValueOnly,
 ) {
-  const settings = await loadAiSettings(chrome.storage.local);
-
-  if (!settings) {
-    throw new Error("Open Dehype and save your AI provider, model, and API key.");
-  }
-
-  return neutralizeProductValues({ settings, productValues });
+  return runNeutralizeWorkflow({
+    productValues,
+    storage: chrome.storage.local,
+  });
 }
 
 function isNeutralizeProductValuesRequest(

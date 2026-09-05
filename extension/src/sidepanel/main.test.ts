@@ -2,6 +2,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 describe("UserNeed Side Panel", () => {
   const storedValues: Record<string, unknown> = {};
+  let storageChangeListener: (
+    changes: Record<string, chrome.storage.StorageChange>,
+    areaName: string,
+  ) => void;
   const storage = {
     get: vi.fn(async () => storedValues),
     set: vi.fn(async (values: Record<string, unknown>) => {
@@ -19,7 +23,16 @@ describe("UserNeed Side Panel", () => {
       delete storedValues[key];
     }
 
-    vi.stubGlobal("chrome", { storage: { local: storage } });
+    vi.stubGlobal("chrome", {
+      storage: {
+        local: storage,
+        onChanged: {
+          addListener: vi.fn((listener) => {
+            storageChangeListener = listener;
+          }),
+        },
+      },
+    });
     document.body.innerHTML = `
       <span id="mode-label"></span>
       <form id="user-need-form">
@@ -41,6 +54,12 @@ describe("UserNeed Side Panel", () => {
         <ul id="summary-must-have"></ul>
         <ul id="summary-nice-to-have"></ul>
         <ul id="summary-exclude"></ul>
+      </section>
+      <section id="need-match-section" hidden>
+        <span id="need-match-status"></span>
+        <p id="need-match-product"></p>
+        <p id="need-match-explanation"></p>
+        <div id="need-match-details"></div>
       </section>
       <footer id="status"></footer>
     `;
@@ -143,7 +162,68 @@ describe("UserNeed Side Panel", () => {
     expect(element("#summary-min-budget").textContent).toBe("100");
     expect(element("#summary-must-have").textContent).toContain("USB-C");
   });
+
+  it("loads, updates, and clears Need Match Analysis", async () => {
+    storedValues.userNeed = {
+      minBudget: null,
+      maxBudget: 500,
+      mustHave: ["USB-C"],
+      niceToHave: [],
+      exclude: [],
+    };
+    storedValues.needMatchAnalysis = successAnalysis("first");
+
+    await import("./main.js");
+    await vi.waitFor(() => {
+      expect(element("#need-match-section").hidden).toBe(false);
+      expect(element("#need-match-status").textContent).toBe("matched");
+      expect(element("#need-match-product").textContent).toBe("Laptop");
+      expect(element("#need-match-details").textContent).toContain("USB-C");
+    });
+
+    storageChangeListener(
+      {
+        needMatchAnalysis: {
+          oldValue: successAnalysis("first"),
+          newValue: { state: "analyzing", analysisId: "second" },
+        },
+      },
+      "local",
+    );
+    expect(element("#need-match-status").textContent).toBe("Analyzing");
+
+    button("#edit-button").click();
+    expect(element("#need-match-section").hidden).toBe(true);
+    await vi.waitFor(() => {
+      expect(storage.remove).toHaveBeenCalledWith("needMatchAnalysis");
+    });
+  });
 });
+
+function successAnalysis(analysisId: string) {
+  return {
+    state: "success",
+    analysisId,
+    result: {
+      productName: "Laptop",
+      status: "matched",
+      explanation: "The required facts match.",
+      budget: {
+        status: "matched",
+        explanation: "The price is within budget.",
+      },
+      mustHave: [
+        {
+          requirement: "USB-C",
+          status: "matched",
+          explanation: "USB-C is listed.",
+        },
+      ],
+      niceToHave: [],
+      exclude: [],
+    },
+  };
+}
 
 function element(selector: string): HTMLElement {
   return document.querySelector<HTMLElement>(selector)!;

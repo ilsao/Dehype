@@ -76,7 +76,7 @@ async function rebuildCurrentProduct(): Promise<{
   if (!productInfo) {
     return {
       ok: false,
-      error: "No product information was found on this page.",
+      error: "Open a supported Temu product detail page and try again.",
     };
   }
 
