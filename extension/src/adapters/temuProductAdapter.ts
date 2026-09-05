@@ -748,6 +748,13 @@ function isVisiblyRendered(element: HTMLElement): boolean {
     return false;
   }
 
+  // A target hidden by Dehype must still count as visible for subsequent
+  // adapter scans. Otherwise our own `display: none` makes the target vanish
+  // from the result, the rebuilder restores it, and the next Temu mutation
+  // suppresses it again.
+  const dehypeSuppressed =
+    element.closest<HTMLElement>("[data-dehype-suppressed]") !== null;
+
   const view = element.ownerDocument.defaultView;
   for (
     let current: HTMLElement | null = element;
@@ -763,7 +770,7 @@ function isVisiblyRendered(element: HTMLElement): boolean {
     ) {
       return false;
     }
-    const style = view?.getComputedStyle(current);
+    const style = dehypeSuppressed ? undefined : view?.getComputedStyle(current);
     if (
       style &&
       (style.display === "none" ||

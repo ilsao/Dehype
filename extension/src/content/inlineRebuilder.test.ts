@@ -215,18 +215,22 @@ describe("inline page rebuilder", () => {
       },
     );
 
-    expect(document.querySelector("#upper-card")).toBeNull();
-    expect(document.querySelector("main")?.children[0]).toBe(lowerCard);
-    expect(handle.suppressedElementCount).toBe(0);
+    expect(upperCard.getAttribute("data-dehype-suppressed")).toBe(
+      "removed-container",
+    );
+    expect(document.querySelector("main")?.children[0]).toBe(upperCard);
+    expect(handle.suppressedElementCount).toBe(1);
 
     handle.neutralizeNewElements();
-    expect(document.querySelector("#upper-card")).toBeNull();
+    expect(upperCard.getAttribute("data-dehype-suppressed")).toBe(
+      "removed-container",
+    );
     handle.restore();
     expect(document.querySelector("main")?.children[0]).toBe(upperCard);
     expect(document.querySelector("main")?.children[1]).toBe(lowerCard);
   });
 
-  it("removes a promotional card again when Temu reattaches the same node", () => {
+  it("keeps a promotional card mounted and suppressed across rescans", () => {
     document.body.innerHTML = `
       <main>
         <section id="upper-card"><span>BIG SALE</span></section>
@@ -252,10 +256,11 @@ describe("inline page rebuilder", () => {
       },
     );
 
-    main.append(upperCard);
-    expect(upperCard.isConnected).toBe(true);
     expect(handle.neutralizeNewElements()).toBe(0);
-    expect(upperCard.isConnected).toBe(false);
+    expect(upperCard.isConnected).toBe(true);
+    expect(upperCard.getAttribute("data-dehype-suppressed")).toBe(
+      "removed-container",
+    );
 
     handle.restore();
     expect(main.children[0]).toBe(upperCard);
@@ -454,13 +459,19 @@ describe("commerce stability with the real Temu adapter", () => {
     });
     observer.observe(document.body, { childList: true, subtree: true });
     for (let index = 0; index < 20; index += 1) handle.neutralizeNewElements();
-    expect(upper.isConnected).toBe(false);
+    expect(upper.isConnected).toBe(true);
+    expect(upper.getAttribute("data-dehype-suppressed")).toBe(
+      "removed-container",
+    );
     expect(button.querySelector("span")?.closest("[data-dehype-suppressed]")).toBeNull();
     expect(button.textContent).toContain("Add to cart");
     document.querySelector("#rightContent")!.prepend(upper);
     await new Promise((resolve) => setTimeout(resolve, 20));
     expect(updates).toBeLessThan(3);
-    expect(upper.isConnected).toBe(false);
+    expect(upper.isConnected).toBe(true);
+    expect(upper.getAttribute("data-dehype-suppressed")).toBe(
+      "removed-container",
+    );
     expect(clicked).not.toHaveBeenCalled();
     observer.disconnect();
     button.remove(); // The original restoration anchor no longer exists.
@@ -485,6 +496,44 @@ describe("commerce stability with the real Temu adapter", () => {
     expect(label.closest("[data-dehype-suppressed]")).toBeNull();
     expect(label.isConnected).toBe(true);
     handle.restore();
+  });
+
+  it("keeps adapter-selected promotional controls suppressed across rescans", () => {
+    document.body.innerHTML = `
+      <main>
+        <h1 ${DEHYPE_ELEMENT_ID}="name-id">Mug</h1>
+        <div id="rightContent">
+          <button id="primary-cart">Add to cart</button>
+          <div id="promotional-cart" role="button">-63% now! Add to cart!</div>
+        </div>
+      </main>
+    `;
+    const adapter = new TemuProductAdapter();
+    const handle = applyInlineRebuild(
+      document,
+      { name: { id: "name-id", value: "Neutral mug" } },
+      {
+        source: "structural",
+        findNeutralizationTargets: () =>
+          adapter.findNeutralizationTargets(document),
+        onRestore: vi.fn(),
+      },
+    );
+    const promotionalCart = document.querySelector<HTMLElement>(
+      "#promotional-cart",
+    )!;
+
+    expect(promotionalCart.getAttribute("data-dehype-suppressed")).toBe(
+      "hidden-container",
+    );
+    handle.neutralizeNewElements();
+    handle.neutralizeNewElements();
+    expect(promotionalCart.getAttribute("data-dehype-suppressed")).toBe(
+      "hidden-container",
+    );
+
+    handle.restore();
+    expect(promotionalCart.hasAttribute("data-dehype-suppressed")).toBe(false);
   });
 
   it("keeps the visible promotional cart button clickable when a plain cart button is hidden", () => {

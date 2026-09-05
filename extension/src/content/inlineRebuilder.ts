@@ -34,8 +34,6 @@ interface NeutralizationEntry {
   originalMarker?: AttributeSnapshot;
   originalText?: string | null;
   replacementText?: string | undefined;
-  parent?: Node;
-  nextSibling?: ChildNode | null;
 }
 
 export interface InlineRebuildHandle {
@@ -148,8 +146,11 @@ export function applyInlineRebuild(
     for (const [element, entry] of neutralizations) {
       const nextTarget = nextTargets.get(element);
       if (entry.action === "remove") {
-        // Detached nodes disappear from adapter scans; retain ownership until restore.
-        if (element.isConnected) element.remove();
+        // Keep the source node mounted so Temu's renderer does not recreate it.
+        // The suppression marker is reversible and remains stable across scans.
+        if (element.isConnected && entry.marker) {
+          element.setAttribute(entry.marker, "removed-container");
+        }
         continue;
       }
       if (entry.action === "rewrite-text") {
@@ -203,15 +204,14 @@ export function applyInlineRebuild(
         continue;
       }
       if (target.action === "remove") {
-        const parent = element.parentNode;
-        if (!parent) continue;
+        const marker = SUPPRESSED_MARKER;
         neutralizations.set(element, {
           element,
           action: target.action,
-          parent,
-          nextSibling: element.nextSibling,
+          marker,
+          originalMarker: snapshotAttribute(element, marker),
         });
-        element.remove();
+        element.setAttribute(marker, target.presentation);
         added += 1;
         continue;
       }
@@ -264,11 +264,8 @@ export function applyInlineRebuild(
       }
       for (const entry of [...neutralizations.values()].reverse()) {
         if (entry.action === "remove") {
-          if (entry.parent?.isConnected && !entry.element.isConnected) {
-            entry.parent.insertBefore(
-              entry.element,
-              entry.nextSibling?.parentNode === entry.parent ? entry.nextSibling : null,
-            );
+          if (entry.marker && entry.originalMarker) {
+            restoreAttribute(entry.element, entry.marker, entry.originalMarker);
           }
           continue;
         }

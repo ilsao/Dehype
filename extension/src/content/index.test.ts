@@ -210,7 +210,7 @@ describe("content-script integration", () => {
     expect(document.querySelector("#upper-cart-summary")).not.toBeNull();
   });
 
-  it("removes the upper sale card while preserving the lower promotional action", async () => {
+  it("stably suppresses the upper sale card while preserving the lower promotional action", async () => {
     document.body.innerHTML = `
       <main>
         <h1 class="_25g_jM0z">Wire stripper</h1>
@@ -229,7 +229,9 @@ describe("content-script integration", () => {
     `;
 
     await rebuildCurrentProduct();
-    expect(document.querySelector("#upper-sale-card")).toBeNull();
+    expect(document.querySelector("#upper-sale-card")?.getAttribute(
+      "data-dehype-suppressed",
+    )).toBe("removed-container");
     expect(document.querySelector("#lower-promotional-action")?.getAttribute(
       "data-dehype-suppressed",
     )).toBeNull();
@@ -238,7 +240,9 @@ describe("content-script integration", () => {
       "Free shipping for this item - updated";
     document.querySelector("#rightContent")!.append(document.createElement("span"));
     await vi.waitFor(() =>
-      expect(document.querySelector("#upper-sale-card")).toBeNull(),
+      expect(document.querySelector("#upper-sale-card")?.getAttribute(
+        "data-dehype-suppressed",
+      )).toBe("removed-container"),
     );
 
     restoreCurrentProduct();
