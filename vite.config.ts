@@ -52,7 +52,6 @@ export default defineConfig({
   publicDir: false,
   plugins: [copyExtensionMetadata()],
   build: {
-    modulePreload: false,
     outDir: outputRoot,
     emptyOutDir: true,
     rollupOptions: {
