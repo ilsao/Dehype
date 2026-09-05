@@ -12,7 +12,7 @@ const manifestFiles = [
 
 const expectedFiles = [
   ...manifestFiles,
-  "src/popup/index.html",
+  "src/popup/popup.html",
   "src/sidepanel/index.html",
   "assets/background.js",
   "assets/content.js",

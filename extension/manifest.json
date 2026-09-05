@@ -1,19 +1,25 @@
 {
-    "name": "Dehype",
-    "description": "A Chrome extension that removes hype from web pages.",
-    "version": "0.0.1",
-    "manifest_version": 3,
-    "action": {
-        "default_popup": "./src/popup/hello.html",
-        "default_icon": "./img/Dehype.png"
-    },
-    "content_scripts": [
-        {
-        "matches": ["<all_urls>"],
-        "js": [
-            "src/content/neutralizer.js",
-            "src/content/index.js"
-        ]
-        }
-    ]
+  "manifest_version": 3,
+  "name": "Dehype",
+  "version": "0.0.1",
+  "description": "A Chrome extension that removes hype from web pages.",
+  "permissions": ["activeTab", "scripting"],
+  "action": {
+    "default_popup": "src/popup/popup.html"
+  },
+  "background": {
+    "service_worker": "src/background/background.js"
+  },
+  "icons": {
+    "32": "img/Dehype.png"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": [
+        "src/content/neutralizer.js",
+        "src/content/index.js"
+      ]
+    }
+  ]
 }
