@@ -14,6 +14,22 @@ function createAdapter() {
   return new TemuProductAdapter(() => `test-id-${++nextId}`);
 }
 
+function markAsVisible(element: HTMLElement): void {
+  Object.defineProperty(element, "getBoundingClientRect", {
+    value: () => ({
+      x: 0,
+      y: 0,
+      width: 180,
+      height: 44,
+      top: 0,
+      right: 180,
+      bottom: 44,
+      left: 0,
+      toJSON: () => ({}),
+    }),
+  });
+}
+
 describe("TemuProductAdapter", () => {
   it("supports Temu product pages and rejects the homepage", () => {
     const adapter = createAdapter();
@@ -455,6 +471,37 @@ describe("TemuProductAdapter", () => {
     expect(
       targets.find(({ element }) => element.id === "only-cart"),
     ).toMatchObject({ action: "deemphasize", presentation: "neutral-action" });
+  });
+
+  it("preserves a visible promotional cart control when the plain cart control is hidden", () => {
+    const document = new DOMParser().parseFromString(
+      `
+        <div id="rightContent">
+          <button id="hidden-primary-cart" style="display: none">Add to cart</button>
+          <section data-dehype-persuasion id="promo-shell">
+            <button id="visible-promotional-cart">
+              <span id="promo-label">-9% now! Add to cart!</span>
+            </button>
+          </section>
+        </div>
+      `,
+      "text/html",
+    );
+    markAsVisible(
+      document.querySelector<HTMLElement>("#visible-promotional-cart")!,
+    );
+
+    const targets = new TemuProductAdapter().findNeutralizationTargets(document);
+    const target = (id: string) =>
+      targets.find(({ element }) => element.id === id);
+
+    expect(target("visible-promotional-cart")).toMatchObject({
+      action: "deemphasize",
+      reason: "promotion",
+      presentation: "neutral-action",
+    });
+    expect(target("promo-shell")).toBeUndefined();
+    expect(target("promo-label")).toBeUndefined();
   });
 
   it("suppresses unrelated promotion while preserving every Go to cart control", () => {

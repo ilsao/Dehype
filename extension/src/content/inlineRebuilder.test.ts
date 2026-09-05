@@ -15,6 +15,22 @@ afterEach(() => {
     .forEach((element) => element.remove());
 });
 
+function markAsVisible(element: HTMLElement): void {
+  Object.defineProperty(element, "getBoundingClientRect", {
+    value: () => ({
+      x: 0,
+      y: 0,
+      width: 180,
+      height: 44,
+      top: 0,
+      right: 180,
+      bottom: 44,
+      left: 0,
+      toJSON: () => ({}),
+    }),
+  });
+}
+
 describe("inline page rebuilder", () => {
   it("inserts neutral values without destroying source descendants", () => {
     document.body.innerHTML = `
@@ -469,5 +485,38 @@ describe("commerce stability with the real Temu adapter", () => {
     expect(label.closest("[data-dehype-suppressed]")).toBeNull();
     expect(label.isConnected).toBe(true);
     handle.restore();
+  });
+
+  it("keeps the visible promotional cart button clickable when a plain cart button is hidden", () => {
+    document.body.innerHTML = `
+      <div id="rightContent">
+        <button style="display: none">Add to cart</button>
+        <section data-dehype-persuasion id="promo-shell">
+          <button id="cart"><span id="cart-label">-9% now! Add to cart!</span></button>
+        </section>
+    </div>`;
+    const adapter = new TemuProductAdapter();
+    const button = document.querySelector<HTMLButtonElement>("#cart")!;
+    markAsVisible(button);
+    const clicked = vi.fn();
+    button.addEventListener("click", clicked);
+    const handle = applyInlineRebuild(document, { name: { id: "metadata", value: "Mug" } }, {
+      source: "structural",
+      findNeutralizationTargets: () => adapter.findNeutralizationTargets(document),
+      onRestore: vi.fn(),
+    });
+
+    for (let index = 0; index < 5; index += 1) handle.neutralizeNewElements();
+    button.click();
+
+    expect(button.getAttribute("data-dehype-deemphasized")).toBe("neutral-action");
+    expect(button.hasAttribute("data-dehype-suppressed")).toBe(false);
+    expect(document.querySelector("#promo-shell")?.hasAttribute("data-dehype-suppressed"))
+      .toBe(false);
+    expect(document.querySelector("#cart-label")?.closest("[data-dehype-suppressed]"))
+      .toBeNull();
+    expect(clicked).toHaveBeenCalledTimes(1);
+    handle.restore();
+    expect(button.hasAttribute("data-dehype-deemphasized")).toBe(false);
   });
 });

@@ -478,7 +478,7 @@ export class TemuProductAdapter implements ProductAdapter {
       PROMOTIONAL_CART_TEXT.test(textValue(control)),
     );
     const removalTargets = [...targets.values()].filter(({ action }) => action !== "deemphasize");
-    const usableControls = commerceControls.filter(isUsableControl);
+    const usableControls = commerceControls.filter(isVisibleUsableControl);
     const retainedControls = usableControls.filter((control) =>
       !removalTargets.some(({ element }) => element.contains(control)) &&
       PRIMARY_ACTION_TEXT.test(textValue(control)),
@@ -625,7 +625,7 @@ function findRedundantPromotionalCartControls(
     productPanel.querySelectorAll<HTMLElement>('button, [role="button"]'),
   ).filter(
     (element) =>
-      isUsableControl(element) &&
+      isVisibleUsableControl(element) &&
       (PRIMARY_ACTION_TEXT.test(textValue(element)) ||
         CART_DESTINATION_TEXT.test(textValue(element))),
   );
@@ -637,7 +637,7 @@ function findRedundantPromotionalCartControls(
     productPanel.querySelectorAll<HTMLElement>('button, [role="button"]'),
   ).filter((element) => {
     if (
-      !isUsableControl(element) ||
+      !isVisibleUsableControl(element) ||
       !PROMOTIONAL_CART_TEXT.test(textValue(element))
     ) {
       return false;
@@ -660,7 +660,7 @@ function findUpperPromotionalCartCards(document: Document): HTMLElement[] {
     productPanel.querySelectorAll<HTMLElement>('button, [role="button"]'),
   ).filter(
     (element) =>
-      isUsableControl(element) && PRIMARY_ACTION_TEXT.test(textValue(element)),
+      isVisibleUsableControl(element) && PRIMARY_ACTION_TEXT.test(textValue(element)),
   );
   if (primaryControls.length === 0) return [];
 
@@ -704,4 +704,53 @@ function isUsableControl(element: HTMLElement): boolean {
     (!(element instanceof HTMLButtonElement) || !element.disabled) &&
     element.getAttribute("aria-disabled") !== "true"
   );
+}
+
+function isVisibleUsableControl(element: HTMLElement): boolean {
+  return isUsableControl(element) && isVisiblyRendered(element);
+}
+
+function isVisiblyRendered(element: HTMLElement): boolean {
+  if (element.hidden || element.closest("[hidden], [aria-hidden='true']")) {
+    return false;
+  }
+
+  const view = element.ownerDocument.defaultView;
+  for (
+    let current: HTMLElement | null = element;
+    current;
+    current = current.parentElement
+  ) {
+    const inlineStyle = current.style;
+    if (
+      inlineStyle.display === "none" ||
+      inlineStyle.visibility === "hidden" ||
+      inlineStyle.visibility === "collapse" ||
+      (inlineStyle.opacity !== "" && Number(inlineStyle.opacity) === 0)
+    ) {
+      return false;
+    }
+    const style = view?.getComputedStyle(current);
+    if (
+      style &&
+      (style.display === "none" ||
+        style.visibility === "hidden" ||
+        style.visibility === "collapse" ||
+        (style.opacity !== "" && Number(style.opacity) === 0))
+    ) {
+      return false;
+    }
+  }
+
+  if (!view) return true;
+
+  const bounds = element.getBoundingClientRect();
+  if (
+    element.getClientRects().length === 0 &&
+    bounds.width === 0 &&
+    bounds.height === 0
+  ) {
+    return /\bjsdom\b/i.test(view.navigator.userAgent);
+  }
+  return true;
 }
