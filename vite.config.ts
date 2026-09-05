@@ -57,8 +57,9 @@ export default defineConfig({
     rollupOptions: {
       input: {
         popup: resolve(extensionRoot, "src/popup/popup.html"),
+        sidepanel: resolve(extensionRoot, "src/sidepanel/index.html"),
         decisionReplay: resolve(extensionRoot, "src/sidepanel/decisionReplay.html"),
-        background: resolve(extensionRoot, "src/background/background.js"),
+        background: resolve(extensionRoot, "src/background/background.ts"),
       },
       preserveEntrySignatures: "strict",
       output: {

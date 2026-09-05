@@ -5,6 +5,38 @@ import type { DecisionEvent } from "../shared/decisionReplay";
 import { DecisionReplayRecorder } from "./decisionReplayRecorder";
 
 describe("DecisionReplayRecorder active views", () => {
+  it("does not mark persuasion targets as ProductInfo elements", () => {
+    document.body.innerHTML = `
+      <h1 class="_25g_jM0z">Ceramic mug</h1>
+      <span data-testid="current-price">$19.99</span>
+      <aside id="promotion" data-dehype-persuasion>Limited time offer</aside>
+    `;
+    window.history.replaceState(
+      {},
+      "",
+      "https://www.temu.com/ca/ceramic-mug-g-123456789.html",
+    );
+    const recorder = new DecisionReplayRecorder({
+      document,
+      adapter: new TemuProductAdapter(),
+      sendEvent: vi.fn(),
+    });
+
+    recorder.start();
+
+    expect(
+      document.querySelector("#promotion")?.hasAttribute(
+        "data-dehype-element-id",
+      ),
+    ).toBe(false);
+    expect(
+      new TemuProductAdapter()
+        .findNeutralizationTargets(document)
+        .some(({ element }) => element.id === "promotion"),
+    ).toBe(true);
+    recorder.stop();
+  });
+
   it("emits a view immediately and updates that event when leaving", () => {
     document.body.innerHTML = `
       <h1 class="_25g_jM0z">Ceramic mug</h1>

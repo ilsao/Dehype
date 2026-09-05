@@ -629,15 +629,16 @@ function errorResponse(
   return { type: "DEHYPE_CONTENT_SCRIPT_ERROR", operation, message };
 }
 
-if (typeof chrome !== "undefined" && chrome.runtime?.onMessage) 
-  decisionReplayRecorder.start();
-
 if (
   typeof chrome !== "undefined" &&
   chrome.runtime?.onMessage &&
   !window.__dehypeContentScriptInitialized
 ) {
   window.__dehypeContentScriptInitialized = true;
+  window.__dehypeStopDecisionReplayRecorder?.();
+  decisionReplayRecorder.start();
+  window.__dehypeStopDecisionReplayRecorder = () =>
+    decisionReplayRecorder.stop();
   chrome.runtime.onMessage.addListener(
     (message: unknown, _sender, sendResponse): boolean => {
       if (
@@ -667,5 +668,6 @@ declare global {
     __dehypeNeedMatchHistoryPatched?: boolean;
     __dehypeSkipInitialNeedMatch?: boolean;
     __dehypeStopNeedMatchAutomation?: () => void;
+    __dehypeStopDecisionReplayRecorder?: () => void;
   }
 }

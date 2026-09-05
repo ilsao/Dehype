@@ -26,6 +26,8 @@ interface ActiveView {
   event: DecisionEvent;
 }
 
+const replayElementIds = new WeakMap<Element, string>();
+
 export class DecisionReplayRecorder {
   private readonly document: Document;
   private readonly adapter: ProductAdapter;
@@ -260,7 +262,7 @@ function elementId(element: Element): string | undefined {
 }
 
 function persuasionRecord(target: NeutralizationTarget): PersuasionRecord {
-  const id = elementId(target.element) ?? createLocalElementId(target.element);
+  const id = replayElementId(target.element);
   const originalText = (target.element.textContent ?? "")
     .replace(/\s+/g, " ")
     .trim()
@@ -277,11 +279,11 @@ function persuasionRecord(target: NeutralizationTarget): PersuasionRecord {
   };
 }
 
-function createLocalElementId(element: Element): string {
-  const existing = element.getAttribute(DEHYPE_ELEMENT_ID);
+function replayElementId(element: Element): string {
+  const existing = replayElementIds.get(element);
   if (existing) return existing;
   const id = `replay-${globalThis.crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2)}`;
-  element.setAttribute(DEHYPE_ELEMENT_ID, id);
+  replayElementIds.set(element, id);
   return id;
 }
 

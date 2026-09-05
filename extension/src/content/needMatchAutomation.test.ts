@@ -49,11 +49,24 @@ function getSendMessageMock(): Mock {
   return chrome.runtime.sendMessage as unknown as Mock;
 }
 
+function needMatchMessages(): unknown[] {
+  return getSendMessageMock().mock.calls
+    .map((call) => call[0])
+    .filter(
+      (message) =>
+        typeof message === "object" &&
+        message !== null &&
+        "type" in message &&
+        message.type === "DEHYPE_ANALYZE_NEED_MATCH_VALUES",
+    );
+}
+
 beforeEach(() => {
   vi.useFakeTimers();
   storageChangeListener = undefined;
   storedValues = {};
   window.__dehypeStopNeedMatchAutomation?.();
+  window.__dehypeStopDecisionReplayRecorder?.();
   window.history.pushState = nativePushState;
   window.history.replaceState = nativeReplaceState;
   delete window.__dehypeContentScriptInitialized;
@@ -85,6 +98,7 @@ beforeEach(() => {
 
 afterEach(() => {
   window.__dehypeStopNeedMatchAutomation?.();
+  window.__dehypeStopDecisionReplayRecorder?.();
   vi.useRealTimers();
   window.history.pushState = nativePushState;
   window.history.replaceState = nativeReplaceState;
@@ -99,7 +113,7 @@ describe("Need Match automatic content triggers", () => {
   it("analyzes the current product after UserNeed is saved", async () => {
     await importContentScript();
     await flushNeedMatchDebounce();
-    expect(chrome.runtime.sendMessage).not.toHaveBeenCalled();
+    expect(needMatchMessages()).toHaveLength(0);
 
     storedValues.userNeed = userNeed;
     storageChangeListener?.(
@@ -115,7 +129,7 @@ describe("Need Match automatic content triggers", () => {
         currentPrice: "$12.99",
       }),
     });
-    const message = getSendMessageMock().mock.calls[0]?.[0];
+    const message = needMatchMessages()[0];
     expect(JSON.stringify(message)).not.toContain("price-child");
     expect(JSON.stringify(message)).not.toContain('"id"');
   });
@@ -124,7 +138,7 @@ describe("Need Match automatic content triggers", () => {
     storedValues.userNeed = userNeed;
     await importContentScript();
     await flushNeedMatchDebounce();
-    expect(chrome.runtime.sendMessage).toHaveBeenCalledTimes(1);
+    expect(needMatchMessages()).toHaveLength(1);
 
     getSendMessageMock().mockClear();
     renderProduct("HOT SALE Travel Mug!", "CA$18.00");
@@ -144,7 +158,7 @@ describe("Need Match automatic content triggers", () => {
     storedValues.userNeed = userNeed;
     await importContentScript();
     await flushNeedMatchDebounce();
-    expect(chrome.runtime.sendMessage).toHaveBeenCalledTimes(1);
+    expect(needMatchMessages()).toHaveLength(1);
 
     storageChangeListener?.(
       { userNeed: { oldValue: userNeed, newValue: userNeed } },
@@ -152,7 +166,7 @@ describe("Need Match automatic content triggers", () => {
     );
     await flushNeedMatchDebounce();
 
-    expect(chrome.runtime.sendMessage).toHaveBeenCalledTimes(1);
+    expect(needMatchMessages()).toHaveLength(1);
   });
 
   it("does not analyze unsupported pages", async () => {
@@ -162,7 +176,7 @@ describe("Need Match automatic content triggers", () => {
     await importContentScript();
     await flushNeedMatchDebounce();
 
-    expect(chrome.runtime.sendMessage).not.toHaveBeenCalled();
+    expect(needMatchMessages()).toHaveLength(0);
   });
 
   it("skips initial analysis when the popup injected the script for Neutralize", async () => {
@@ -172,7 +186,7 @@ describe("Need Match automatic content triggers", () => {
     await importContentScript();
     await flushNeedMatchDebounce();
 
-    expect(chrome.runtime.sendMessage).not.toHaveBeenCalled();
+    expect(needMatchMessages()).toHaveLength(0);
     expect(window.__dehypeSkipInitialNeedMatch).toBe(false);
   });
 });
