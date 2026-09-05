@@ -24,7 +24,8 @@ describe("TemuProductAdapter", () => {
         <main>
           <div class="_25g_jM0z">Ceramic mug</div>
           <div class="_14At0Pe5">7.<span>40</span></div>
-          <div class="_14At0Pe5"><span>4.</span><span>58</span></div>
+          <div class="_14At0Pe5">$7.<span>40</span></div>
+          <div class="_14At0Pe5"><span>$4.</span><span>58</span></div>
           <div class="_1lS1CJSS PjdWJn3s _28K5UOnx">
             <span class="_14At0Pe5">$0.55</span>
             <span>0.55</span>
@@ -40,9 +41,43 @@ describe("TemuProductAdapter", () => {
 
     expect(productInfo).toEqual({
       name: { id: "test-id-1", value: "Ceramic mug" },
-      originalPrice: { id: "test-id-2", value: "7.40" },
-      currentPrice: { id: "test-id-3", value: "4.58" },
+      originalPrice: { id: "test-id-2", value: "$7.40" },
+      currentPrice: { id: "test-id-3", value: "$4.58" },
       discount: { id: "test-id-4", value: "36% OFF" },
+    });
+  });
+
+  it("assigns the larger price as originalPrice regardless of DOM order", () => {
+    const document = new DOMParser().parseFromString(
+      `
+        <div class="_25g_jM0z">Ceramic mug</div>
+        <div class="_14At0Pe5">$4.58</div>
+        <div class="_14At0Pe5">$7.40</div>
+      `,
+      "text/html",
+    );
+    const adapter = createAdapter();
+
+    expect(adapter.extractProductInfo(document, productUrl)).toEqual({
+      name: { id: "test-id-1", value: "Ceramic mug" },
+      originalPrice: { id: "test-id-3", value: "$7.40" },
+      currentPrice: { id: "test-id-2", value: "$4.58" },
+    });
+  });
+
+  it("assigns a single price as currentPrice", () => {
+    const document = new DOMParser().parseFromString(
+      `
+        <div class="_25g_jM0z">Ceramic mug</div>
+        <div class="_14At0Pe5">$4.58</div>
+      `,
+      "text/html",
+    );
+    const adapter = createAdapter();
+
+    expect(adapter.extractProductInfo(document, productUrl)).toEqual({
+      name: { id: "test-id-1", value: "Ceramic mug" },
+      currentPrice: { id: "test-id-2", value: "$4.58" },
     });
   });
 

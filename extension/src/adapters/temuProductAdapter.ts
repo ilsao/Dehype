@@ -57,6 +57,10 @@ function toNameFallback(document: Document, idFactory: IdFactory): Elem | undefi
   return value ? { id: idFactory(), value } : undefined;
 }
 
+function parsePriceValue(price: Elem): number {
+  return Number(price.value.replace(/^\$\s*/, "").replace(/,/g, ""));
+}
+
 export class TemuProductAdapter implements ProductAdapter {
   private readonly idFactory: IdFactory;
 
@@ -87,6 +91,7 @@ export class TemuProductAdapter implements ProductAdapter {
 
   private getPriceElements(document: Document): Elem[] {
     return Array.from(document.querySelectorAll("._14At0Pe5"))
+      .filter((element) => /\$\s*\d+(\.\d+)?/.test(readElementValue(element)))
       .slice(0, 2)
       .map((element) => toElem(element, this.idFactory))
       .filter((element): element is Elem => element !== undefined);
@@ -110,9 +115,24 @@ export class TemuProductAdapter implements ProductAdapter {
       throw new Error("The Temu product name could not be extracted.");
     }
 
-    const [originalPriceElement, currentPriceElement] = this.getPriceElements(
-      document,
-    );
+    const priceElements = this.getPriceElements(document);
+    let originalPriceElement: Elem | undefined;
+    let currentPriceElement: Elem | undefined;
+
+    if (priceElements.length === 1) {
+      currentPriceElement = priceElements[0];
+    } else if (priceElements.length >= 2) {
+      const [firstPrice, secondPrice] = priceElements;
+      if (firstPrice && secondPrice) {
+        if (parsePriceValue(firstPrice) >= parsePriceValue(secondPrice)) {
+          originalPriceElement = firstPrice;
+          currentPriceElement = secondPrice;
+        } else {
+          originalPriceElement = secondPrice;
+          currentPriceElement = firstPrice;
+        }
+      }
+    }
     const discountElement = this.getDiscount(document);
 
     const productInfo: ProductInfo = {
