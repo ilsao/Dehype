@@ -1,56 +1,43 @@
 <!doctype html>
 <html lang="en">
   <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Decision Replay</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dehype — Decision Replay</title>
   </head>
   <body>
+    <header class="app-header">
+      <a class="brand-button" href="./index.html" aria-label="Dehype home"><img class="brand-icon" src="../../img/Dehype.png" alt=""><span class="brand-word">DE<span>HYPE</span></span></a>
+    </header>
     <main>
       <header class="page-header">
-        <div>
-          <p class="eyebrow">DEHYPE / LOCAL SESSION</p>
-          <h1>Decision Replay</h1>
-          <p id="session-meta">Loading session...</p>
-        </div>
-        <div class="header-actions">
-          <a class="secondary" href="./index.html">User needs</a>
-          <button id="reset" class="secondary" type="button">Reset</button>
-        </div>
+        <a class="back-button" href="./index.html">← Back</a>
+        <p class="eyebrow"><span>03</span> / Analysis</p>
+        <h1>Review your<br><em>decision path.</em></h1>
+        <div class="session-row"><p id="session-meta">Loading session...</p><button id="reset" class="secondary-button compact-button" type="button">Reset</button></div>
       </header>
+
       <section class="intent-panel" aria-labelledby="intent-heading">
-        <div>
-          <p class="section-label">Intent</p>
-          <h2 id="intent-heading">Keep the decision visible</h2>
-        </div>
-        <label>Budget <input id="budget" type="text" placeholder="$30" /></label>
-        <button id="save-intent" class="secondary" type="button">Save</button>
+        <div><p class="section-label">User Need</p><h2 id="intent-heading">Original purchase intent</h2><p id="intent-summary" class="intent-summary">Loading saved needs...</p></div>
+        <a class="secondary-button compact-button" href="./index.html#needs">Edit User Need</a>
       </section>
+
       <section class="dashboard" aria-labelledby="dashboard-heading">
         <div class="section-heading"><p class="section-label">Deterministic replay</p><h2 id="dashboard-heading">What happened</h2></div>
         <div id="kpis" class="kpis"></div>
         <div class="dashboard-grid">
-          <article class="chart-panel"><p class="section-label">Attention Share</p><div id="attention-share" class="bar-chart"></div></article>
+          <article class="chart-panel"><p class="section-label">Attention Share</p><div id="attention-share" class="attention-treemap"></div></article>
           <article class="chart-panel"><p class="section-label">Decision Journey</p><div id="journey-chart" class="journey-chart"></div></article>
           <article class="chart-panel"><p class="section-label">Price Path</p><div id="price-path" class="price-path"></div></article>
           <article class="chart-panel"><p class="section-label">Persuasion Signals Encountered</p><div id="persuasion-chart" class="bar-chart"></div></article>
         </div>
       </section>
-      <section aria-labelledby="timeline-heading">
-        <div class="section-heading"><p class="section-label">Sequence</p><h2 id="timeline-heading">Timeline</h2></div>
-        <ol id="timeline" class="timeline"><li class="empty">No product activity yet.</li></ol>
-      </section>
-      <section aria-labelledby="products-heading">
-        <div class="section-heading"><p class="section-label">Snapshot</p><h2 id="products-heading">Products Viewed</h2></div>
-        <div id="products" class="products"><p class="empty">No products viewed yet.</p></div>
-      </section>
-      <section aria-labelledby="analysis-heading">
-        <div class="section-heading"><p class="section-label">Optional Gemini reflection</p><h2 id="analysis-heading">What might this mean?</h2></div>
-        <div id="analysis" class="analysis"><p class="empty">Analysis stays on demand and does not affect collection.</p></div>
-        <button id="analyze" type="button">Analyze</button>
-        <button id="configure-gemini" class="secondary configure-button" type="button" hidden>Open Gemini settings</button>
-      </section>
+
+      <section aria-labelledby="timeline-heading"><div class="section-heading"><p class="section-label">Sequence</p><h2 id="timeline-heading">Timeline</h2></div><ol id="timeline" class="timeline"><li class="empty">No product activity yet.</li></ol></section>
+      <section aria-labelledby="products-heading"><div class="section-heading"><p class="section-label">Snapshot</p><h2 id="products-heading">Products Viewed</h2></div><div id="products" class="products"><p class="empty">No products viewed yet.</p></div></section>
+      <section aria-labelledby="analysis-heading"><div class="section-heading"><p class="section-label">Optional AI reflection</p><h2 id="analysis-heading">What might this mean?</h2></div><div id="analysis" class="analysis"><p class="empty">Analysis stays on demand and does not affect collection.</p></div><button id="analyze" class="primary-button full-button" type="button">Analyze</button><button id="configure-gemini" class="secondary-button full-button configure-button" type="button" hidden>Open AI settings</button></section>
     </main>
+    <footer id="status">Decision activity stays in this browser.</footer>
     <script type="module" src="./decisionReplay.js"></script>
   </body>
 </html>

@@ -1,5 +1,10 @@
+import "./sidepanel.css";
 import "./decisionReplay.css";
 import { buildDecisionTrace } from "../shared/decisionTrace.ts";
+import {
+  loadUserNeed,
+  USER_NEED_STORAGE_KEY,
+} from "../shared/userNeed.ts";
 
 const timeline = document.querySelector("#timeline");
 const products = document.querySelector("#products");
@@ -11,8 +16,9 @@ const journeyChart = document.querySelector("#journey-chart");
 const pricePath = document.querySelector("#price-path");
 const persuasionChart = document.querySelector("#persuasion-chart");
 const meta = document.querySelector("#session-meta");
-const budget = document.querySelector("#budget");
+const intentSummary = document.querySelector("#intent-summary");
 let session;
+let savedUserNeed;
 window.setInterval(() => {
   if (session) render();
 }, 1000);
@@ -38,12 +44,8 @@ document.querySelector("#analyze").addEventListener("click", async () => {
   }
 });
 
-configureGeminiButton.addEventListener("click", async () => {
-  try {
-    await chrome.action.openPopup();
-  } catch {
-    setAnalysisMessage("Open the Dehype toolbar popup to configure Gemini.");
-  }
+configureGeminiButton.addEventListener("click", () => {
+  window.location.href = "./index.html#settings";
 });
 
 document.querySelector("#reset").addEventListener("click", async () => {
@@ -51,32 +53,39 @@ document.querySelector("#reset").addEventListener("click", async () => {
   render();
 });
 
-document.querySelector("#save-intent").addEventListener("click", async () => {
-  if (!session) return;
-  session.intent = budget.value.trim() ? { budget: budget.value.trim() } : undefined;
-  await chrome.storage.local.set({ decisionReplaySession: session });
-  render();
-});
-
 void load();
 
 chrome.storage.onChanged.addListener((changes, areaName) => {
-  if (areaName !== "local" || !changes.decisionReplaySession?.newValue) return;
-  session = changes.decisionReplaySession.newValue;
-  render();
+  if (areaName !== "local") return;
+  if (changes.decisionReplaySession?.newValue) {
+    session = changes.decisionReplaySession.newValue;
+    render();
+  }
+  if (USER_NEED_STORAGE_KEY in changes) {
+    void loadUserNeed(chrome.storage.local)
+      .catch(() => null)
+      .then((value) => {
+        savedUserNeed = value;
+        render();
+      });
+  }
 });
 
 async function load() {
-  const response = await chrome.runtime.sendMessage({ type: "DEHYPE_REPLAY_GET_SESSION" });
+  const [response, userNeed] = await Promise.all([
+    chrome.runtime.sendMessage({ type: "DEHYPE_REPLAY_GET_SESSION" }),
+    loadUserNeed(chrome.storage.local).catch(() => null),
+  ]);
   session = response?.session;
+  savedUserNeed = userNeed;
   render();
 }
 
 function render() {
   if (!session) return;
   meta.textContent = `${session.events.length} events · started ${formatTime(session.startedAt)}`;
-  budget.value = session.intent?.budget ?? "";
-  renderDashboard(buildDecisionTrace(session));
+  renderIntentSummary();
+  renderDashboard(buildDecisionTrace(sessionWithSavedBudget()));
   renderTimeline();
   renderProducts();
 }
@@ -122,7 +131,7 @@ function renderDashboard(trace) {
   ].join("");
 
   attentionShare.innerHTML = trace.products.length
-    ? trace.products.map((product) => barRow(product.name ?? product.productId, product.attentionShare, `${Math.round(product.attentionShare * 100)}%`)).join("")
+    ? trace.products.map((product, index) => attentionTile(product, index)).join("")
     : emptyChart("No completed product views yet.");
 
   const productById = new Map(trace.products.map((product) => [product.productId, product]));
@@ -153,6 +162,39 @@ function kpiValue(value, label) {
 
 function barRow(label, ratio, value) {
   return `<div class="bar-row"><div class="bar-label"><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong></div><div class="bar-track"><span style="width:${Math.max(0, Math.min(100, ratio * 100))}%"></span></div></div>`;
+}
+
+function renderIntentSummary() {
+  if (!savedUserNeed) {
+    intentSummary.textContent = "No saved purchase intent yet.";
+    return;
+  }
+  const budgetRange = formatBudgetRange(savedUserNeed.minBudget, savedUserNeed.maxBudget);
+  const criteriaCount = savedUserNeed.mustHave.length + savedUserNeed.niceToHave.length + savedUserNeed.exclude.length;
+  intentSummary.textContent = `${budgetRange} · ${criteriaCount} saved ${criteriaCount === 1 ? "criterion" : "criteria"}`;
+}
+
+function sessionWithSavedBudget() {
+  return {
+    ...session,
+    intent: savedUserNeed?.maxBudget === null || savedUserNeed?.maxBudget === undefined
+      ? undefined
+      : { budget: String(savedUserNeed.maxBudget) },
+  };
+}
+
+function formatBudgetRange(minimum, maximum) {
+  if (minimum === null && maximum === null) return "Budget not set";
+  if (minimum === null) return `Budget up to ${formatMoney(maximum)}`;
+  if (maximum === null) return `Budget from ${formatMoney(minimum)}`;
+  return `Budget ${formatMoney(minimum)}–${formatMoney(maximum)}`;
+}
+
+function attentionTile(product, index) {
+  const ratio = Math.max(0, Math.min(1, product.attentionShare));
+  const label = product.name ?? product.productId;
+  const percent = `${Math.round(ratio * 100)}%`;
+  return `<div class="attention-tile attention-tile-${index % 4}" style="flex-grow:${Math.max(ratio, 0.02)}" title="${escapeHtml(label)} — ${percent}"><strong>${percent}</strong><span>${escapeHtml(label)}</span></div>`;
 }
 
 function emptyChart(message) { return `<p class="empty">${escapeHtml(message)}</p>`; }

@@ -21,7 +21,7 @@ extension in `dist/`. To inspect it locally, open `chrome://extensions`, enable
 Developer mode, choose **Load unpacked**, and select the generated `dist/`
 directory.
 
-The popup offers consent-based analysis through OpenAI, Gemini, or Claude. If
+The side panel offers consent-based analysis through OpenAI, Gemini, or Claude. If
 AI is not configured or cannot return a valid result, Dehype preserves the
 original product facts and still applies deterministic structural cleanup to
 the active Temu page. Provider, model, consent, and API-key settings are
@@ -35,11 +35,11 @@ the source page does not provide them, and `ProductElement.id` values remain
 local to the extension. The manual Neutralize action waits briefly for dynamic
 product data, inserts neutral inline replacements for visible extracted fields,
 and temporarily hides known promotional elements. The source nodes remain in
-place so either the popup or the on-page Restore control can remove all
+place so either the side-panel Restore action or the on-page Restore control can remove all
 extension-owned changes without destroying Temu event handlers. If no visible
 field can be rebuilt, the action reports an error instead of presenting the
 analysis as a successful page update. If a Temu tab predates an extension
-reload, the popup uses the narrowly scoped `scripting` permission to inject the
+reload, the side panel uses the narrowly scoped `scripting` permission to inject the
 built content script into that active tab and retry the action once.
 
 Pull requests run lint, test, and build as separate GitHub Actions checks.
@@ -57,7 +57,6 @@ Pull requests run lint, test, and build as separate GitHub Actions checks.
 |       |-- adapters
 |       |-- background
 |       |-- content
-|       |-- popup
 |       |-- shared
 |       `-- sidepanel
 |-- scripts

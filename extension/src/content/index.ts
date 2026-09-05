@@ -6,6 +6,7 @@ import {
 } from "./inlineRebuilder";
 import type {
   ContentScriptErrorResponse,
+  GetPageStateResponse,
   NeutralizeProductValuesResponse,
   ProductInfo,
   ProductInfoValueOnly,
@@ -57,6 +58,7 @@ interface WaitOptions {
 type ContentResponse =
   | RebuildCurrentProductResponse
   | RestoreCurrentProductResponse
+  | GetPageStateResponse
   | ContentScriptErrorResponse
   | PriceComparisonResult
   | PriceComparisonErrorResponse;
@@ -238,6 +240,16 @@ export function handleContentMessage(
   sendResponse: (response: ContentResponse) => void,
 ): boolean {
   if (!isContentScriptRequest(message)) return false;
+
+  if (message.type === "DEHYPE_GET_PAGE_STATE") {
+    sendResponse({
+      type: "DEHYPE_PAGE_STATE_RESULT",
+      neutralized: Boolean(activeResponse && activeRebuild?.targetsAreConnected()),
+      priceComparisonActive: sessionStorage.getItem(SEARCH_STATE_KEY) !== null,
+      supportedProduct: productAdapter.isSupportedPage(window.location.href),
+    });
+    return false;
+  }
 
   if (message.type === "DEHYPE_RETURN_FROM_SEARCH") {
     returnFromSearch();

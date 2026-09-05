@@ -40,8 +40,8 @@ for (const manifest of [sourceManifest, builtManifest]) {
     }
   }
 
-  if (manifest.action?.default_popup !== "src/popup/popup.html") {
-    throw new Error("The toolbar action must open the popup.");
+  if (manifest.action?.default_popup) {
+    throw new Error("The toolbar action must open the side panel, not a popup.");
   }
 
   if (manifest.side_panel?.default_path !== "src/sidepanel/index.html") {
