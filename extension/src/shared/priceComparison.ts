@@ -24,6 +24,19 @@ export interface PriceBin {
   count: number;
 }
 
+export function isBinInBudget(
+  bin: PriceBin,
+  minBudget: number | null,
+  maxBudget: number | null,
+): boolean {
+  if (minBudget === null && maxBudget === null) {
+    return false;
+  }
+  const min = minBudget ?? 0;
+  const max = maxBudget ?? Infinity;
+  return bin.upper >= min && bin.lower <= max;
+}
+
 export function parsePrice(priceStr: unknown): ParsedPrice | undefined {
   if (typeof priceStr !== "string") return undefined;
   const match = priceStr.trim().match(/^\s*([^\d\s]+)?\s*([\d,]+(?:\.\d+)?)\s*([A-Z]{3})?\s*$/i);

@@ -16,7 +16,11 @@ import {
   type NeedMatchItem,
   type NeedMatchStatus,
 } from "../shared/needMatch.js";
-import { createPriceBins, type PriceBin } from "../shared/priceComparison.js";
+import {
+  createPriceBins,
+  isBinInBudget,
+  type PriceBin,
+} from "../shared/priceComparison.js";
 import type { PriceComparisonResult } from "../shared/productInfo.js";
 
 const form = requiredElement<HTMLFormElement>("#user-need-form");
@@ -46,7 +50,6 @@ const needMatchExplanation = requiredElement<HTMLElement>("#need-match-explanati
 const needMatchDetails = requiredElement<HTMLElement>("#need-match-details");
 const priceComparisonSection = document.querySelector<HTMLElement>("#price-comparison-section");
 const returnToNeedsButton = document.querySelector<HTMLButtonElement>("#return-to-needs");
-const priceProductName = document.querySelector<HTMLElement>("#price-product-name");
 const priceStatus = document.querySelector<HTMLElement>("#price-status");
 const priceChart = document.querySelector<HTMLElement>("#price-chart");
 const priceBudgetLabel = document.querySelector<HTMLElement>("#price-budget-label");
@@ -422,9 +425,7 @@ async function returnToProductAndShowNeeds(): Promise<void> {
 
 function renderPriceComparison(data: PriceComparisonResult): void {
   showPriceComparisonView();
-  if (priceProductName) priceProductName.textContent = data.productName;
-  if (priceStatus) priceStatus.textContent = `Search keyword: ${data.searchKeyword} (${data.source})`;
-  requiredElement<HTMLElement>("#price-count").textContent = `Selected ${data.products.length} products.`;
+  if (priceStatus) priceStatus.textContent = "";
   requiredElement<HTMLElement>("#price-min").textContent = formatPrice(data.min, data.products[0]?.currency);
   requiredElement<HTMLElement>("#price-median").textContent = formatPrice(data.median, data.products[0]?.currency);
   requiredElement<HTMLElement>("#price-max").textContent = formatPrice(data.max, data.products[0]?.currency);
@@ -432,15 +433,21 @@ function renderPriceComparison(data: PriceComparisonResult): void {
   const userNeed = readSavedNeedForChart();
   const budgetText = budgetLabel(userNeed, currency);
   if (priceBudgetLabel) priceBudgetLabel.textContent = budgetText;
-  requiredElement<HTMLElement>("#price-budget-summary").textContent = budgetText.replace("Budget range: ", "");
   const bins = createPriceBins(data.products.map(({ price }) => price));
-  if (priceChart) priceChart.replaceChildren(...createPriceBars(bins, currency));
+  if (priceChart) priceChart.replaceChildren(...createPriceBars(bins, currency, userNeed));
+}
+
+function parseBudgetValue(value: string): number | null {
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  const parsed = Number(trimmed);
+  return Number.isFinite(parsed) ? parsed : null;
 }
 
 function readSavedNeedForChart(): UserNeed {
   return {
-    minBudget: Number(minBudgetInput.value) || null,
-    maxBudget: Number(maxBudgetInput.value) || null,
+    minBudget: parseBudgetValue(minBudgetInput.value),
+    maxBudget: parseBudgetValue(maxBudgetInput.value),
     mustHave: [],
     niceToHave: [],
     exclude: [],
@@ -448,24 +455,51 @@ function readSavedNeedForChart(): UserNeed {
 }
 
 function budgetLabel(userNeed: UserNeed, currency: string): string {
-  const minimum = userNeed.minBudget === null ? "no minimum" : formatPrice(userNeed.minBudget, currency);
-  const maximum = userNeed.maxBudget === null ? "no maximum" : formatPrice(userNeed.maxBudget, currency);
-  return `Budget range: ${minimum} - ${maximum}`;
+  if (userNeed.minBudget === null && userNeed.maxBudget === null) {
+    return "";
+  }
+  const minimum = userNeed.minBudget === null ? "no min" : formatPrice(userNeed.minBudget, currency);
+  const maximum = userNeed.maxBudget === null ? "no max" : formatPrice(userNeed.maxBudget, currency);
+  return `Budget: ${minimum} - ${maximum}`;
 }
 
-function createPriceBars(bins: PriceBin[], currency: string): HTMLElement[] {
+export function createPriceBars(
+  bins: PriceBin[],
+  currency: string,
+  userNeed?: Pick<UserNeed, "minBudget" | "maxBudget">,
+): HTMLElement[] {
   const maximumCount = Math.max(...bins.map(({ count }) => count), 1);
+  const minBudget = userNeed?.minBudget ?? null;
+  const maxBudget = userNeed?.maxBudget ?? null;
+
   return bins.map((bin) => {
+    const inBudget = isBinInBudget(bin, minBudget, maxBudget);
+
     const group = document.createElement("div");
-    group.className = "price-bar-group";
+    group.className = `price-bar-group${inBudget ? " in-budget" : ""}`;
+
+    const column = document.createElement("div");
+    column.className = `price-bar-column${inBudget ? " in-budget" : ""}`;
+    if (inBudget) {
+      column.setAttribute("title", "Within your budget range");
+      column.setAttribute("aria-label", "Within budget range");
+    }
+
     const count = document.createElement("span");
+    count.className = "price-bar-count";
     count.textContent = String(bin.count);
+
     const bar = document.createElement("span");
     bar.className = "price-bar";
     bar.style.height = `${(bin.count / maximumCount) * 100}%`;
+
+    column.append(count, bar);
+
     const label = document.createElement("span");
+    label.className = "price-bar-label";
     label.textContent = `${formatPrice(bin.lower, currency)}-${formatPrice(bin.upper, currency)}`;
-    group.append(count, bar, label);
+
+    group.append(column, label);
     return group;
   });
 }

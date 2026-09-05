@@ -6,6 +6,7 @@ describe("UserNeed Side Panel", () => {
     changes: Record<string, chrome.storage.StorageChange>,
     areaName: string,
   ) => void;
+  let messageListener: (message: unknown) => void = () => {};
   const storage = {
     get: vi.fn(async () => storedValues),
     set: vi.fn(async (values: Record<string, unknown>) => {
@@ -29,6 +30,13 @@ describe("UserNeed Side Panel", () => {
         onChanged: {
           addListener: vi.fn((listener) => {
             storageChangeListener = listener;
+          }),
+        },
+      },
+      runtime: {
+        onMessage: {
+          addListener: vi.fn((listener) => {
+            messageListener = listener;
           }),
         },
       },
@@ -60,6 +68,17 @@ describe("UserNeed Side Panel", () => {
         <p id="need-match-product"></p>
         <p id="need-match-explanation"></p>
         <div id="need-match-details"></div>
+      </section>
+      <section id="price-comparison-section" hidden>
+        <button id="return-to-needs" type="button">Back</button>
+        <p id="price-status"></p>
+        <div class="price-chart-heading"><span>Price distribution</span><span id="price-budget-label"></span></div>
+        <div id="price-chart"></div>
+        <div class="price-summary-grid">
+          <div><span>Minimum</span><strong id="price-min"></strong></div>
+          <div><span>Median</span><strong id="price-median"></strong></div>
+          <div><span>Maximum</span><strong id="price-max"></strong></div>
+        </div>
       </section>
       <footer id="status"></footer>
     `;
@@ -229,6 +248,60 @@ describe("UserNeed Side Panel", () => {
     await vi.waitFor(() => {
       expect(storage.remove).toHaveBeenCalledWith("needMatchAnalysis");
     });
+  });
+
+  it("renders price comparison without redundant info, without budget range card, and highlights budget on chart", async () => {
+    storedValues.userNeed = {
+      minBudget: 3,
+      maxBudget: 8,
+      mustHave: [],
+      niceToHave: [],
+      exclude: [],
+    };
+
+    await import("./main.js");
+    await vi.waitFor(() => {
+      expect(element("#status").textContent).toBe("Saved user needs loaded.");
+    });
+
+    messageListener({
+      type: "DEHYPE_PRICE_COMPARISON_RESULT",
+      source: "dom",
+      productName: "Long Title Should Not Appear",
+      searchKeyword: "Search Keyword Should Not Appear",
+      min: 2.5,
+      max: 15.0,
+      median: 7.0,
+      products: [
+        { price: 2.5, currency: "USD", name: "P1" },
+        { price: 4.5, currency: "USD", name: "P2" },
+        { price: 7.0, currency: "USD", name: "P3" },
+        { price: 10.0, currency: "USD", name: "P4" },
+        { price: 15.0, currency: "USD", name: "P5" },
+      ],
+    });
+
+    expect(element("#price-comparison-section").hidden).toBe(false);
+    expect(document.querySelector("#price-product-name")).toBeNull();
+    expect(document.querySelector("#price-count")).toBeNull();
+    expect(document.querySelector("#price-budget-summary")).toBeNull();
+    expect(element("#price-status").textContent).toBe("");
+    expect(element("#price-min").textContent).toBe("2.50 USD");
+    expect(element("#price-median").textContent).toBe("7.00 USD");
+    expect(element("#price-max").textContent).toBe("15.00 USD");
+    expect(element("#price-budget-label").textContent).toBe("Budget: 3.00 USD - 8.00 USD");
+
+    const inBudgetColumns = document.querySelectorAll(".price-bar-column.in-budget");
+    expect(inBudgetColumns.length).toBeGreaterThan(0);
+
+    const outsideColumns = document.querySelectorAll(".price-bar-column:not(.in-budget)");
+    expect(outsideColumns.length).toBeGreaterThan(0);
+
+    // Each column contains count and bar, and label is a sibling in price-bar-group
+    const firstInBudget = inBudgetColumns[0];
+    expect(firstInBudget?.querySelector(".price-bar")).not.toBeNull();
+    expect(firstInBudget?.querySelector(".price-bar-count")).not.toBeNull();
+    expect(firstInBudget?.getAttribute("title")).toBe("Within your budget range");
   });
 });
 
