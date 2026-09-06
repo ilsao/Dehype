@@ -126,7 +126,7 @@ npm run dev
 ## 作品展示
 
 - 作品展示網址：[https://ilsao.github.io/Dehype/](https://ilsao.github.io/Dehype/)
-- 評選影片：尚未提供
+- 評選影片：[https://www.youtube.com/watch?v=eU7sD168kfE](https://www.youtube.com/watch?v=eU7sD168kfE)
 
 ## 限制與未來工作
 
